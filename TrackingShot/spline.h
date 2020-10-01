@@ -16,7 +16,7 @@ float getKnot(float alpha, float t, glm::vec3 p0, glm::vec3 p1)
 }
 
 // Given four points, calculate an interpolated point between p1 and p2 using a Catmul-Rom spline.
-// t specifies the position along the path, with t=0 being p1 and t=2 being p2.
+// t specifies the position along the path, with t=0 being p1 and t=1 being p2.
 glm::vec3 catmullSpline(float alpha, glm::vec3 p0, glm::vec3 p1, glm::vec3 p2, glm::vec3 p3, float t)
 {
     float t0 = 0.0f;

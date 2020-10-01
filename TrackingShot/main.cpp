@@ -103,6 +103,10 @@ int main(int argc, char** argv)
 
     // TODO: define world
 
+    CameraWaypoint camPt;
+    camPt.position = camera.Position;
+    cameraPath.AddPosition(camPt);
+
     int countBases = 20; // Angabe: mindestens 20 Stützpunkte
     float deg = 2 * PI / countBases;
     for (int i = 0; i < countBases; ++i)
@@ -113,15 +117,13 @@ int main(int argc, char** argv)
             10.0f * sinf(i * deg),
             0);
         cameraPath.AddPosition(camPt);
-        std::cout << " add path waypoint: " << glm::to_string(camPt.position) << std::endl;
     }
-    //return 0;
 
     // setup global light
     Light gLight;
     //gLight.position = camera.position();
     gLight.position = glm::vec3(0, 0, 10);
-    gLight.intensities = glm::vec3(1, 1, 1); // whiter
+    gLight.intensities = glm::vec3(1, 1, 1); // white
     //gLight.intensities = glm::vec3(1, 0, 0); // red
 
 #ifdef MODERN_NO_SHADER
@@ -238,7 +240,9 @@ int main(int argc, char** argv)
     glVertexAttribPointer(2, 3, GL_FLOAT, GL_TRUE, 8 * sizeof(float), (void*)(5 * sizeof(float)));
     glEnableVertexAttribArray(2);
 
-    glm::vec3 newPos = cameraPath.NextPos().position;
+    size_t curWayPt = 0;
+    float t = 0;
+    //float s = glm::distance(camera.Position, cameraPath.Positions()[(curWayPt + 1) % cameraPath.PositionsSize()].position);
 
     // Loop until the user closes the window
     while (!glfwWindowShouldClose(window))
@@ -271,24 +275,36 @@ int main(int argc, char** argv)
         // activate shader
         basicShader.use();
 
-        float dist = glm::distance(camera.Position, newPos);
-        //std::cout << "remaining dist from " << glm::to_string(curPos) << " to trackPt " << glm::to_string(newPos) << ": " << dist << std::endl; // wtf? 1.85978e+08
-        if (dist < .5) {
-            newPos = cameraPath.NextPos().position;
+        float dist = glm::distance(camera.Position, cameraPath.Positions()[(curWayPt + 1) % cameraPath.PositionsSize()].position);
+        //std::cout << " dist: " << dist << std::endl;
+        if (dist < .1f || t >= 1) {
+            curWayPt = (curWayPt + 1) % cameraPath.PositionsSize();
+            //std::cout << " moving to point #" << curWayPt << " " << glm::to_string(cameraPath.Positions()[curWayPt].position) << " for t: " << t << std::endl;
+            //s = glm::distance(camera.Position, cameraPath.Positions()[(curWayPt + 1) % cameraPath.PositionsSize()].position);
+            t = 0;
         }
 
         //glm::mat4 view = camera.lookAtNextPos(newPos);
-        camera.lookAtPos(newPos);
-        camera.moveTowardNextPos(deltaTime * camSpeed);
+        //camera.lookAtPos(newPos);
+        //camera.moveTowardNextPos(deltaTime * camSpeed);
+
+        // just setting position calculated by catmull spline function
+        glm::vec3 p1 = cameraPath.Positions()[curWayPt].position;
+        glm::vec3 p2 = cameraPath.Positions()[(curWayPt + 1) % cameraPath.PositionsSize()].position;
+        glm::vec3 p3 = cameraPath.Positions()[(curWayPt + 2) % cameraPath.PositionsSize()].position;
+        glm::vec3 p0 = cameraPath.Positions()[(curWayPt > 0) ? curWayPt - 1 : cameraPath.PositionsSize() - 1].position;
+        camera.Position = catmullSpline(0.5, p0, p1, p2, p3, t);
+        //t += deltaTime * (s / camSpeed);
+        t += deltaTime * camSpeed;
 
         //--------------------------------------------------------------------------------------------------------
-        // change camera mode
+        // change camera mode (controlled by mouse or auto run)
         Camera cam = (editMode) ? baseCamera : camera;
         // pass projection matrix to shader (note that in this case it could change every frame)
         glm::mat4 projection = glm::perspective(glm::radians(cam.Zoom), (float)WIDTH / (float)HEIGHT, 0.1f, 100.0f);
         basicShader.setMat4("projection", projection);
 
-        // camera/view transformation - controlled by mouse
+        // camera/view transformation
         glm::mat4 view = cam.GetViewMatrix();
         basicShader.setMat4("view", view);
         //basicShader.setMat4("view", glm::inverse(view));
@@ -335,7 +351,7 @@ int main(int argc, char** argv)
         // render cubes for cameraPath points
         //for (glm::vec3 pos : cameraPath.Positions)
         std::vector<CameraWaypoint> camPos = cameraPath.Positions();
-        for (int i = 0; i < camPos.size(); ++i)
+        for (size_t i = 0; i < camPos.size(); ++i)
         {
             basicShader.use(); // bind shader
             glBindVertexArray(VAO);
@@ -405,30 +421,49 @@ int main(int argc, char** argv)
 void processInput(GLFWwindow* window)
 {
     //std::cout << "processing input... " << std::endl;
+
+    // add camera waypoint
     if (glfwGetKey(window, GLFW_KEY_ESCAPE) == GLFW_PRESS)
         glfwSetWindowShouldClose(window, true);
 
-    /*if (glfwGetKey(window, GLFW_KEY_SPACE) == GLFW_RELEASE) {
-        editMode ^= true;
-        std::cout << "setting editMode to: " << editMode << std::endl;
-    }*/
-    /*int state = glfwGetKey(window, GLFW_KEY_SPACE);
-    if (state == GLFW_PRESS) {
-        editMode ^= true;
-        std::cout << "setting editMode to: " << editMode << std::endl;
-    }*/
+    if (glfwGetKey(window, GLFW_KEY_SPACE) == GLFW_PRESS)
+    {
+        bool add = true;
+        glm::vec3 camPos = baseCamera.Position;
+        //for (CameraWaypoint pt : cameraPath.Positions) { // illegal indirection TODO: wtf?
+        //for (int i = 0; i < cameraPath.Positions.size(); ++i)
+        std::vector<CameraWaypoint> wayPos = cameraPath.Positions();
+        for (int i = 0; i < wayPos.size(); ++i)
+        {
+            if (glm::distance(cameraPath.Positions()[i].position, camPos) < 1)
+            {
+                add = false;
+                break;
+            }
+        }
 
+        if (add)
+        {
+            CameraWaypoint camPt;
+            camPt.position = camPos;
+            //std::cout << "Added waypoint #" << cameraPath.Positions().size() << " at " << glm::to_string(camPt.position) << std::endl;
+            cameraPath.AddPosition(camPt);
+        }
+    }
+
+    // change edit and view mode
     if (glfwGetKey(window, GLFW_KEY_1) == GLFW_PRESS)
         editMode = true;
     else if (glfwGetKey(window, GLFW_KEY_2) == GLFW_PRESS)
         editMode = false;
 
+    // speed up / slow down
     if (glfwGetKey(window, GLFW_KEY_KP_ADD))
         camSpeed += 0.1f;
-
-    if (glfwGetKey(window, GLFW_KEY_KP_SUBTRACT))
+    else if (glfwGetKey(window, GLFW_KEY_KP_SUBTRACT))
         camSpeed -= 0.1f;
 
+    // move base camera
     if (glfwGetKey(window, GLFW_KEY_W) == GLFW_PRESS)
         baseCamera.ProcessKeyboard(FORWARD, deltaTime);
     if (glfwGetKey(window, GLFW_KEY_S) == GLFW_PRESS)
