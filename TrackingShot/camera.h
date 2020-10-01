@@ -3,6 +3,8 @@
 // GLM Mathematics
 #include <glm.hpp>
 #include <gtc/matrix_transform.hpp>
+#include <gtc/quaternion.hpp>
+//#include <gtx/quaternion.hpp>
 
 #include <vector>
 
@@ -34,6 +36,7 @@ public:
     // euler Angles
     float Yaw;
     float Pitch;
+    glm::quat Rotation;
     // camera options
     float MovementSpeed;
     float MouseSensitivity;
@@ -77,7 +80,7 @@ public:
     }
     void moveTowardNextPos(float deltaTime)
     {
-        Position += Front * MovementSpeed * deltaTime;
+        Position += Front * deltaTime; // * MovementSpeed
     }
     // ----------------------------------TEMP FOR CAMERA MOVEMENT-------------------------------------------- -
 

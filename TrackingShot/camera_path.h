@@ -10,30 +10,35 @@
 //#include <vector>
 #include <deque>
 
+struct CameraWaypoint {
+    glm::vec3 position;
+    glm::quat rotation;
+};
+
 class CameraPath
 {
 private:
-    std::deque<glm::vec3> positions;
+    std::deque<CameraWaypoint> positions;
     bool loop = true;
 
 public:
     CameraPath() {
     }
 
-    void AddPosition(glm::vec3 pos) {
+    void AddPosition(CameraWaypoint pos) {
         positions.push_back(pos);
     }
 
-    glm::vec3 NextPos() {
-        glm::vec3 val = positions.front();
+    CameraWaypoint NextPos() {
+        CameraWaypoint val = positions.front();
         positions.pop_front();
         // for looping re-append first pos
         if (loop) positions.push_back(val);
         return val;
     }
 
-    std::vector<glm::vec3> Positions() {
-        std::vector<glm::vec3> ret;
+    std::vector<CameraWaypoint> Positions() {
+        std::vector<CameraWaypoint> ret;
         for (int i = 0; i < positions.size(); ++i) {
             ret.push_back(positions[i]);
         }

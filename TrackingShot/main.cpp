@@ -7,6 +7,8 @@
 
 #include <iostream>
 
+#define PI 3.14159
+
 // static linking -> need to add Linker input glew32s.lib instead of glew32.lib and GLEW_STATIC as preprocessor Definition
 #include <GL/glew.h> // include glew before gl.h (from glfw3)
 #include <GLFW/glfw3.h>
@@ -19,27 +21,7 @@
 #include "spline.h"
 //#include "world.h"
 
-// openGL Error handling:
-// use with GLCALL(glfunction());
-#define ASSERT(func) if (!(func)) __debugbreak();
-#define GLCALL(func) glClearErrors(); \
-                     func;\
-                     ASSERT(glLogCall(#func, __FILE__, __LINE__))
-
-static void glClearErrors()
-{
-    while (glGetError() != GL_NO_ERROR);
-}
-
-static bool glLogCall(const char* func, const char* file, int line)
-{
-    while (GLenum error = glGetError())
-    {
-        std::cout << "OpenGL Error (" << error << "): " << func << " " << file << ": " << line << std::endl;
-        return false;
-    }
-    return true;
-}
+#include "errorHandler.h" // use with GLCALL(glfunction());
 
 #include <gtx/string_cast.hpp> // glm::to_string
 
@@ -57,9 +39,11 @@ CameraFloating cameraFloating; // floating camera
 CameraPath cameraPath;
 bool editMode = true; // changes beween base and floating camera
 
+// dynamic camera settings
 float lastX = WIDTH / 2.0f;
 float lastY = HEIGHT / 2.0f;
 bool firstMouse = true;
+float camSpeed = SPEED;
 
 // timing
 float deltaTime = 0.0f;	// time between current frame and last frame
@@ -119,15 +103,25 @@ int main(int argc, char** argv)
 
     // TODO: define world
 
-    cameraPath.AddPosition(glm::vec3(10, 0, -5));
-    cameraPath.AddPosition(glm::vec3(-10, 0, -5));
-    cameraPath.AddPosition(glm::vec3(0, 3, -20));
+    int countBases = 20; // Angabe: mindestens 20 Stützpunkte
+    float deg = 2 * PI / countBases;
+    for (int i = 0; i < countBases; ++i)
+    {
+        CameraWaypoint camPt;
+        camPt.position = glm::vec3(
+            10.0f * cosf(i * deg),
+            10.0f * sinf(i * deg),
+            0);
+        cameraPath.AddPosition(camPt);
+        std::cout << " add path waypoint: " << glm::to_string(camPt.position) << std::endl;
+    }
+    //return 0;
 
     // setup global light
     Light gLight;
     //gLight.position = camera.position();
     gLight.position = glm::vec3(0, 0, 10);
-    gLight.intensities = glm::vec3(1, 1, 1); // white
+    gLight.intensities = glm::vec3(1, 1, 1); // whiter
     //gLight.intensities = glm::vec3(1, 0, 0); // red
 
 #ifdef MODERN_NO_SHADER
@@ -244,7 +238,7 @@ int main(int argc, char** argv)
     glVertexAttribPointer(2, 3, GL_FLOAT, GL_TRUE, 8 * sizeof(float), (void*)(5 * sizeof(float)));
     glEnableVertexAttribArray(2);
 
-    glm::vec3 newPos = cameraPath.NextPos();
+    glm::vec3 newPos = cameraPath.NextPos().position;
 
     // Loop until the user closes the window
     while (!glfwWindowShouldClose(window))
@@ -277,53 +271,41 @@ int main(int argc, char** argv)
         // activate shader
         basicShader.use();
 
+        float dist = glm::distance(camera.Position, newPos);
+        //std::cout << "remaining dist from " << glm::to_string(curPos) << " to trackPt " << glm::to_string(newPos) << ": " << dist << std::endl; // wtf? 1.85978e+08
+        if (dist < .5) {
+            newPos = cameraPath.NextPos().position;
+        }
+
+        //glm::mat4 view = camera.lookAtNextPos(newPos);
+        camera.lookAtPos(newPos);
+        camera.moveTowardNextPos(deltaTime * camSpeed);
+
         //--------------------------------------------------------------------------------------------------------
         // change camera mode
-        if (editMode) {
-            // use baseCamera
-            // pass projection matrix to shader (note that in this case it could change every frame)
-            glm::mat4 projection = glm::perspective(glm::radians(baseCamera.Zoom), (float)WIDTH / (float)HEIGHT, 0.1f, 100.0f);
-            basicShader.setMat4("projection", projection);
+        Camera cam = (editMode) ? baseCamera : camera;
+        // pass projection matrix to shader (note that in this case it could change every frame)
+        glm::mat4 projection = glm::perspective(glm::radians(cam.Zoom), (float)WIDTH / (float)HEIGHT, 0.1f, 100.0f);
+        basicShader.setMat4("projection", projection);
 
-            // camera/view transformation - controlled by mouse
-            glm::mat4 view = baseCamera.GetViewMatrix();
-            basicShader.setMat4("view", view);
-        }
-        else {
-            // use floating camera
-            // pass projection matrix to shader (note that in this case it could change every frame)
-            glm::mat4 projection = glm::perspective(glm::radians(camera.Zoom), (float)WIDTH / (float)HEIGHT, 0.1f, 100.0f);
-            basicShader.setMat4("projection", projection);
+        // camera/view transformation - controlled by mouse
+        glm::mat4 view = cam.GetViewMatrix();
+        basicShader.setMat4("view", view);
+        //basicShader.setMat4("view", glm::inverse(view));
 
-            glm::vec3 curPos = camera.Position;
-            float dist = glm::distance(curPos, newPos);
-            std::cout << "remaining dist from " << glm::to_string(curPos) << " to trackPt " << glm::to_string(newPos) << ": " << dist << std::endl; // wtf? 1.85978e+08
-            if (dist < .5) {
-                newPos = cameraPath.NextPos();
-            }
+        /* https://www.tomdalling.com/blog/modern-opengl/04-cameras-vectors-and-input/
+        glm::vec3 curPos = cameraFloating.position();
+        float dist = glm::distance(curPos, newPos);
+        std::cout << "remaining dist from " << glm::to_string(curPos) << " to trackPt " << glm::to_string(newPos) << ": " << dist << std::endl; // wtf? 1.85978e+08
 
-            //glm::mat4 view = camera.lookAtNextPos(newPos);
-            camera.lookAtPos(newPos);
-            camera.moveTowardNextPos(deltaTime);
-            glm::mat4 view = camera.GetViewMatrix();
-            //std::cout << "viewing matrix: " << glm::to_string(view);
-            //basicShader.setMat4("view", view);
-            basicShader.setMat4("view", glm::inverse(view));
+        cameraFloating.lookAt(glm::vec3(0, 0, 0));
+        //cameraFloating.lookAt(newPos);
+        cameraFloating.offsetPosition(deltaTime * 2 * cameraFloating.forward());
+        //cameraFloating.offsetPosition(deltaTime * 2 * cameraFloating.forward());
 
-            /* https://www.tomdalling.com/blog/modern-opengl/04-cameras-vectors-and-input/
-            glm::vec3 curPos = cameraFloating.position();
-            float dist = glm::distance(curPos, newPos);
-            std::cout << "remaining dist from " << glm::to_string(curPos) << " to trackPt " << glm::to_string(newPos) << ": " << dist << std::endl; // wtf? 1.85978e+08
-
-            cameraFloating.lookAt(glm::vec3(0, 0, 0));
-            //cameraFloating.lookAt(newPos);
-            cameraFloating.offsetPosition(deltaTime * 2 * cameraFloating.forward());
-            //cameraFloating.offsetPosition(deltaTime * 2 * cameraFloating.forward());
-
-            //glm::mat4 view = cameraFloating.matrix();
-            glm::mat4 view = cameraFloating.view();
-            basicShader.setMat4("view", view);*/
-        }
+        //glm::mat4 view = cameraFloating.matrix();
+        glm::mat4 view = cameraFloating.view();
+        basicShader.setMat4("view", view);*/
 
         //---------------------------------------------------------------------------------------------------------
         // render a cube for floating camera
@@ -352,7 +334,7 @@ int main(int argc, char** argv)
         //--------------------------------------------------------------------------------------------------------
         // render cubes for cameraPath points
         //for (glm::vec3 pos : cameraPath.Positions)
-        std::vector<glm::vec3> camPos = cameraPath.Positions();
+        std::vector<CameraWaypoint> camPos = cameraPath.Positions();
         for (int i = 0; i < camPos.size(); ++i)
         {
             basicShader.use(); // bind shader
@@ -362,7 +344,7 @@ int main(int argc, char** argv)
             glm::mat4 model = glm::mat4(1.0f); // make sure to initialize matrix to identity matrix first
 
             //glm::vec3 pos = cameraFloating.position();
-            model = glm::translate(model, camPos[i]);
+            model = glm::translate(model, camPos[i].position);
             model = glm::scale(model, glm::vec3(0.1, 0.1, 0.1));
             basicShader.setMat4("model", model);
 
@@ -440,6 +422,12 @@ void processInput(GLFWwindow* window)
         editMode = true;
     else if (glfwGetKey(window, GLFW_KEY_2) == GLFW_PRESS)
         editMode = false;
+
+    if (glfwGetKey(window, GLFW_KEY_KP_ADD))
+        camSpeed += 0.1f;
+
+    if (glfwGetKey(window, GLFW_KEY_KP_SUBTRACT))
+        camSpeed -= 0.1f;
 
     if (glfwGetKey(window, GLFW_KEY_W) == GLFW_PRESS)
         baseCamera.ProcessKeyboard(FORWARD, deltaTime);
