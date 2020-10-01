@@ -78,6 +78,7 @@
       <ConformanceMode>true</ConformanceMode>
       <AdditionalIncludeDirectories>$(SolutionDir)..\..\src\glew\include;$(SolutionDir)..\..\src\glfw\include;$(SolutionDir)..\..\src\glm</AdditionalIncludeDirectories>
       <PreprocessorDefinitions>GLEW_STATIC;_MBCS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <LanguageStandard>Default</LanguageStandard>
     </ClCompile>
     <Link>
       <SubSystem>Console</SubSystem>
@@ -107,14 +108,15 @@
       <IntrinsicFunctions>true</IntrinsicFunctions>
       <SDLCheck>true</SDLCheck>
       <ConformanceMode>true</ConformanceMode>
-      <AdditionalIncludeDirectories>$(SolutionDir)..\..\src\glfw-3.3.2\include;$(SolutionDir)..\..\src\glm;</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>$(SolutionDir)..\..\src\glew\include;$(SolutionDir)..\..\src\glfw\include;$(SolutionDir)..\..\src\glm</AdditionalIncludeDirectories>
+      <PreprocessorDefinitions>GLEW_STATIC;_MBCS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
     </ClCompile>
     <Link>
       <SubSystem>Console</SubSystem>
       <EnableCOMDATFolding>true</EnableCOMDATFolding>
       <OptimizeReferences>true</OptimizeReferences>
-      <AdditionalDependencies>glfw3.lib;User32.lib;	Gdi32.lib;Opengl32.lib;Shell32.lib;</AdditionalDependencies>
-      <AdditionalLibraryDirectories>$(SolutionDir)..\..\src\glfw-3.3.2\lib-vc2019\</AdditionalLibraryDirectories>
+      <AdditionalDependencies>glew32s.lib;glfw3.lib;User32.lib;Gdi32.lib;Opengl32.lib;Shell32.lib;</AdditionalDependencies>
+      <AdditionalLibraryDirectories>$(SolutionDir)..\..\src\glew\lib;$(SolutionDir)..\..\src\glfw\lib</AdditionalLibraryDirectories>
     </Link>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
