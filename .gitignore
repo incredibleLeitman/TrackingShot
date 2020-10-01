@@ -1,5 +1,7 @@
 
 .vs/*
+Release/*
+TrackingShot/Release/*
 Debug/*
 TrackingShot/Debug/*
 TrackingShot/x64/*
