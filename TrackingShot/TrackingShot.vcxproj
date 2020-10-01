@@ -136,11 +136,13 @@
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
+    <ClCompile Include="errorHandler.cpp" />
     <ClCompile Include="main.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="camera.h" />
     <ClInclude Include="camera_floating.h" />
+    <ClInclude Include="errorHandler.h" />
     <ClInclude Include="light.h" />
     <ClInclude Include="camera_path.h" />
     <ClInclude Include="shader.h" />
