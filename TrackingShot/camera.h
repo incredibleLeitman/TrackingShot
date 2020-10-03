@@ -4,7 +4,8 @@
 #include <glm.hpp>
 #include <gtc/matrix_transform.hpp>
 #include <gtc/quaternion.hpp>
-//#include <gtx/quaternion.hpp>
+#include <gtx/quaternion.hpp> // glm squad, interpolate, ...
+#include <gtx/string_cast.hpp> // glm::to_string
 
 #include <vector>
 
@@ -17,8 +18,10 @@ enum Camera_Movement {
 };
 
 // Default camera values
-const float YAW = -90.0f;
+//const float YAW = -90.0f;
+const float YAW = 0.0f;
 const float PITCH = 0.0f;
+const float ROLL = 0.0f;
 const float SPEED = 2.5f;
 const float SENSITIVITY = 0.1f;
 const float ZOOM = 45.0f;
@@ -36,6 +39,7 @@ public:
     // euler Angles
     float Yaw;
     float Pitch;
+    //float Roll; // no support yet
     glm::quat Rotation;
     // camera options
     float MovementSpeed;
@@ -61,28 +65,15 @@ public:
         updateCameraVectors();
     }
 
-    // ---------------------------------- TEMP FOR CAMERA MOVEMENT ---------------------------------------------
-    glm::mat4 lookAtNextPos(glm::vec3 pos)
+    void updateRotation(glm::quat rot)
     {
-        glm::mat4 mat = glm::inverse(glm::lookAt(Position, pos, Up));
-        return mat;
-    }
-    void lookAtPos(glm::vec3 pos)
-    {
-        glm::vec3 dir = glm::normalize(pos - Position);
-        //Yaw = glm::radians(asinf(-dir.y));
-        //Pitch = -glm::radians(atan2f(-dir.x, -dir.z));
-        Pitch = glm::radians(asinf(-dir.y));
-        Yaw = -glm::radians(atan2f(-dir.x, -dir.z));
-        //normalizeAngles();
+        Rotation = rot;
 
-        updateCameraVectors();
+        Front = glm::eulerAngles(Rotation);
+        // also re-calculate the Right and Up vector
+        Right = glm::normalize(glm::cross(Front, WorldUp)); // normalize the vectors, because their length gets closer to 0 the more you look up or down which results in slower movement.
+        Up = glm::normalize(glm::cross(Right, Front));
     }
-    void moveTowardNextPos(float deltaTime)
-    {
-        Position += Front * deltaTime; // * MovementSpeed
-    }
-    // ----------------------------------TEMP FOR CAMERA MOVEMENT-------------------------------------------- -
 
     // returns the view matrix calculated using Euler Angles and the LookAt Matrix
     glm::mat4 GetViewMatrix()
@@ -149,5 +140,16 @@ private:
         // also re-calculate the Right and Up vector
         Right = glm::normalize(glm::cross(Front, WorldUp));  // normalize the vectors, because their length gets closer to 0 the more you look up or down which results in slower movement.
         Up = glm::normalize(glm::cross(Right, Front));
+
+        // also update quaternion rotation
+        Rotation = glm::quat(front);
+
+        /*
+        // debug output
+        std::cout << "converting rotation from Yaw, Pitch, Roll:" << "\r\n\t" << Yaw << ", " << Pitch << ", 0 " << std::endl; // no Roll
+        std::cout << "to front:\r\n\t" << glm::to_string(front) << std::endl;
+        glm::vec3 euler = glm::eulerAngles(Rotation);
+        std::cout << "and over quat back to euler angles (in rad):\r\n\t" << glm::to_string(euler) << std::endl;
+        */
     }
 };
