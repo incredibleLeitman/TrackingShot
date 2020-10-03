@@ -1,4 +1,12 @@
-//see: docs.gl fpr opengl specification
+//------------------------------------------------------------------------------------------
+// Camera Tracking Shot Project for EZG Master Game Engineering FH Technikum Wien
+//------------------------------------------------------------------------------------------
+//
+// General TODOs:
+// - combine cameras, only use resulting projection and view matrices
+// - structure stuff into classes
+// - integrate textures, plains, skybox...
+//------------------------------------------------------------------------------------------
 
 // define drawing mode for openGL variant:
 // CLASSIC_OGL      classic drawing without shaders, vertexArrays or indexBuffers
@@ -7,7 +15,7 @@
 
 #include <iostream>
 
-#define PI 3.14159
+#define PI 3.14159 // ... TODO: away go stinky constant!
 
 // static linking -> need to add Linker input glew32s.lib instead of glew32.lib and GLEW_STATIC as preprocessor Definition
 #include <GL/glew.h> // include glew before gl.h (from glfw3)
@@ -23,20 +31,19 @@
 
 #include "errorHandler.h" // use with GLCALL(glfunction());
 
-#include <gtx/string_cast.hpp> // glm::to_string
-
 void framebuffer_size_callback(GLFWwindow* window, int width, int height);
 void mouse_callback(GLFWwindow* window, double xpos, double ypos);
 void scroll_callback(GLFWwindow* window, double xoffset, double yoffset);
 void processInput(GLFWwindow* window);
 
 const GLint WIDTH = 800, HEIGHT = 600;
+const int CONTROL_POINTS = 20; // Angabe: mindestens 20 Stützpunkte
 
 // TODO: world
-Camera baseCamera(glm::vec3(0.0f, 0.0f, 20.0f)); // camera to overview scene
-Camera camera(glm::vec3(0.0f, 0.0f, 3.0f)); // floating camera
-CameraFloating cameraFloating; // floating camera
-CameraPath cameraPath;
+Camera baseCamera(glm::vec3(0.0f, 20.0f, 0.0f), glm::vec3(0.0f, 1.0f, 0.0f), 0, -90); // camera to overview scene
+Camera camera(glm::vec3(0.0f, 0.0f, 0.0f)); // floating camera
+//CameraFloating cameraFloating; // floating camera
+CameraPath cameraPath; // path for waypoints, including rotations
 bool editMode = true; // changes beween base and floating camera
 
 // dynamic camera settings
@@ -103,26 +110,45 @@ int main(int argc, char** argv)
 
     // TODO: define world
 
-    CameraWaypoint camPt;
+    // add camera starting point to waypoints
+    /*CameraWaypoint camPt;
     camPt.position = camera.Position;
-    cameraPath.AddPosition(camPt);
+    camPt.rotation = camera.Rotation;
+    cameraPath.AddPosition(camPt);*/
 
-    int countBases = 20; // Angabe: mindestens 20 Stützpunkte
-    float deg = 2 * PI / countBases;
-    for (int i = 0; i < countBases; ++i)
+    // add defined amount of waypoints to list
+    if (CONTROL_POINTS > 0)
     {
-        CameraWaypoint camPt;
-        camPt.position = glm::vec3(
-            10.0f * cosf(i * deg),
-            10.0f * sinf(i * deg),
-            0);
-        cameraPath.AddPosition(camPt);
+        float rad = 8.0f;
+        float deg = 2 * PI / CONTROL_POINTS;
+        for (int i = 0; i < CONTROL_POINTS; ++i)
+        {
+            CameraWaypoint camPt;
+            //camPt.position = glm::vec3(rad * cosf(i * deg), rad * sinf(i * deg), 0); // position in circle around center, x/y plane
+            camPt.position = glm::vec3(rad * cosf(i * deg), 0, rad * sinf(i * deg)); // position in circle around center, x/z plane
+            // set orientation of prev cube to current
+            if (i > 0)
+            {
+                CameraWaypoint& prePt = cameraPath.Positions()[i - 1];
+                prePt.rotation = glm::quat(glm::normalize(camPt.position - prePt.position));
+                //std::cout << "setting prev rotation to " << glm::to_string(prePt.rotation) << std::endl;
+            }
+            cameraPath.AddPosition(camPt);
+        }
+        // set last point orientation to first
+        CameraWaypoint& prePt = cameraPath.Positions()[CONTROL_POINTS - 1];
+        prePt.rotation = glm::quat(glm::normalize(cameraPath.Positions()[0].position - prePt.position));
+        //std::cout << "setting last pt rotation to " << glm::to_string(prePt.rotation) << std::endl;
+
+        // setting starting point for floating camera
+        camera.Position = cameraPath.Positions()[0].position;
     }
 
     // setup global light
     Light gLight;
     //gLight.position = camera.position();
-    gLight.position = glm::vec3(0, 0, 10);
+    //gLight.position = glm::vec3(0, 0, 10);
+    gLight.position = glm::vec3(0, 0, 0);
     gLight.intensities = glm::vec3(1, 1, 1); // white
     //gLight.intensities = glm::vec3(1, 0, 0); // red
 
@@ -240,9 +266,23 @@ int main(int argc, char** argv)
     glVertexAttribPointer(2, 3, GL_FLOAT, GL_TRUE, 8 * sizeof(float), (void*)(5 * sizeof(float)));
     glEnableVertexAttribArray(2);
 
-    size_t curWayPt = 0;
-    float t = 0;
-    //float s = glm::distance(camera.Position, cameraPath.Positions()[(curWayPt + 1) % cameraPath.PositionsSize()].position);
+    // spline interpolation for position and rotation
+    size_t curWayPt = 0; // index of current waypoint to drive to
+    float t = 0; // t für spline interpolations
+    float s = 1; // distance between points
+    CameraWaypoint pt0;
+    CameraWaypoint pt1;
+    CameraWaypoint pt2;
+    CameraWaypoint pt3;
+    if (cameraPath.PositionsSize() > 0)
+    {
+        size_t size = cameraPath.PositionsSize();
+        pt1 = cameraPath.Positions()[curWayPt];
+        pt2 = cameraPath.Positions()[(curWayPt + 1) % size];
+        pt3 = cameraPath.Positions()[(curWayPt + 2) % size];
+        pt0 = cameraPath.Positions()[(curWayPt > 0) ? curWayPt - 1 : size - 1];
+        s = glm::distance(camera.Position, pt2.position); // total distance between current position end next waypoint
+    }
 
     // Loop until the user closes the window
     while (!glfwWindowShouldClose(window))
@@ -277,30 +317,38 @@ int main(int argc, char** argv)
 
         float dist = glm::distance(camera.Position, cameraPath.Positions()[(curWayPt + 1) % cameraPath.PositionsSize()].position);
         //std::cout << " dist: " << dist << std::endl;
-        if (dist < .1f || t >= 1) {
-            curWayPt = (curWayPt + 1) % cameraPath.PositionsSize();
-            //std::cout << " moving to point #" << curWayPt << " " << glm::to_string(cameraPath.Positions()[curWayPt].position) << " for t: " << t << std::endl;
-            //s = glm::distance(camera.Position, cameraPath.Positions()[(curWayPt + 1) % cameraPath.PositionsSize()].position);
-            t = 0;
+        if (/*dist < .1f ||*/ t >= 1)
+        {
+            size_t size = cameraPath.PositionsSize();
+            curWayPt = (curWayPt + 1) % size;
+
+            pt1 = cameraPath.Positions()[curWayPt];
+            pt2 = cameraPath.Positions()[(curWayPt + 1) % size];
+            pt3 = cameraPath.Positions()[(curWayPt + 2) % size];
+            pt0 = cameraPath.Positions()[(curWayPt > 0) ? curWayPt - 1 : size - 1];
+            s = glm::distance(camera.Position, pt2.position); // total distance between current position end next waypoint
+
+            std::cout << " moving to point #" << curWayPt <<
+                " with position: " << glm::to_string(pt2.position) <<
+                " and rotation" << glm::to_string(pt2.rotation) <<
+                " for t: " << t << std::endl;
+            t -= (int)t;
         }
 
-        //glm::mat4 view = camera.lookAtNextPos(newPos);
-        //camera.lookAtPos(newPos);
-        //camera.moveTowardNextPos(deltaTime * camSpeed);
+        // setting position calculated by catmull spline function
+        camera.Position = catmullSpline(0.5, pt0.position, pt1.position, pt2.position, pt3.position, t);
+        t += deltaTime * camSpeed / s;
 
-        // just setting position calculated by catmull spline function
-        glm::vec3 p1 = cameraPath.Positions()[curWayPt].position;
-        glm::vec3 p2 = cameraPath.Positions()[(curWayPt + 1) % cameraPath.PositionsSize()].position;
-        glm::vec3 p3 = cameraPath.Positions()[(curWayPt + 2) % cameraPath.PositionsSize()].position;
-        glm::vec3 p0 = cameraPath.Positions()[(curWayPt > 0) ? curWayPt - 1 : cameraPath.PositionsSize() - 1].position;
-        camera.Position = catmullSpline(0.5, p0, p1, p2, p3, t);
-        //t += deltaTime * (s / camSpeed);
-        t += deltaTime * camSpeed;
+        // setting rotation view defined by SQUAD (SLERP) algorithm
+        // Compute a point on a path according squad equation -> q1 and q2 are control points, s1 and s2 are intermediate control points
+        camera.updateRotation(glm::squad(pt1.rotation, pt2.rotation,
+            glm::intermediate(pt0.rotation, pt1.rotation, pt2.rotation),
+            glm::intermediate(pt1.rotation, pt2.rotation, pt3.rotation), t));
 
         //--------------------------------------------------------------------------------------------------------
         // change camera mode (controlled by mouse or auto run)
         Camera cam = (editMode) ? baseCamera : camera;
-        // pass projection matrix to shader (note that in this case it could change every frame)
+        // pass projection matrix to shader (in this case it could change every frame)
         glm::mat4 projection = glm::perspective(glm::radians(cam.Zoom), (float)WIDTH / (float)HEIGHT, 0.1f, 100.0f);
         basicShader.setMat4("projection", projection);
 
@@ -323,24 +371,53 @@ int main(int argc, char** argv)
         glm::mat4 view = cameraFloating.view();
         basicShader.setMat4("view", view);*/
 
-        //---------------------------------------------------------------------------------------------------------
-        // render a cube for floating camera
-        basicShader.use(); // bind shader
-        glBindVertexArray(VAO);
-
         // calculate the model matrix for each object and pass it to shader before drawing
         glm::mat4 model = glm::mat4(1.0f); // make sure to initialize matrix to identity matrix first
+        //---------------------------------------------------------------------------------------------------------
+        // render a cube for floating camera
+        if (editMode)
+        {
+            //glm::vec3 pos = cameraFloating.position();
+            model = glm::translate(model, camera.Position);
+            model = glm::scale(model, glm::vec3(0.5, 0.5, 0.5));
 
-        //glm::vec3 pos = cameraFloating.position();
-        glm::vec3 pos = camera.Position;
-        model = glm::translate(model, pos);
-        model = glm::translate(model, glm::vec3(0, 0, 1)); // position slightly behind camera view
-        model = glm::scale(model, glm::vec3(0.5, 0.5, 0.5));
+            // rotate by quaternion
+            /*glm::vec3 euler = glm::eulerAngles(camera.Rotation);
+            // no visible rotation?
+            //model = glm::rotate(model, glm::radians(euler.x), glm::vec3(1.0f, 0.0f, 0.0f));
+            //model = glm::rotate(model, glm::radians(euler.y), glm::vec3(0.0f, 1.0f, 0.0f));
+            //model = glm::rotate(model, glm::radians(euler.z), glm::vec3(0.0f, 0.0f, 1.0f));
+            // little rotation but wrong
+            model = glm::rotate(model, euler.x, glm::vec3(0.0f, 1.0f, 0.0f));
+            model = glm::rotate(model, euler.y, glm::vec3(0.0f, 1.0f, 0.0f));
+            model = glm::rotate(model, euler.z, glm::vec3(0.0f, 0.0f, 1.0f));*/
+
+            glm::mat4 rotMat = glm::toMat4(camera.Rotation);
+            model *= rotMat;
+
+            basicShader.setMat4("model", model);
+
+            // adding additional shader stuff like lighting
+            basicShader.setMat4("transform", model);
+            basicShader.setVec4("color", glm::vec4(1, 0, 1, 1));
+            // setting light params
+            basicShader.setVec3("light.position", gLight.position);
+            basicShader.setVec3("light.intensities", gLight.intensities);
+
+            glDrawArrays(GL_TRIANGLES, 0, 36);
+        }
+
+        //---------------------------------------------------------------------------------------------------------
+        // render the sun \ [T] /
+        model = glm::mat4(1.0f);
+        model = glm::translate(model, gLight.position);
+        model = glm::scale(model, glm::vec3(0.2, 0.2, 0.2));
         basicShader.setMat4("model", model);
 
         // adding additional shader stuff like lighting
         basicShader.setMat4("transform", model);
-        basicShader.setVec4("color", glm::vec4(1, 0, 1, 1));
+        basicShader.setVec4("color", glm::vec4(1, 1, 0, 1));
+
         // setting light params
         basicShader.setVec3("light.position", gLight.position);
         basicShader.setVec3("light.intensities", gLight.intensities);
@@ -348,20 +425,24 @@ int main(int argc, char** argv)
         glDrawArrays(GL_TRIANGLES, 0, 36);
 
         //--------------------------------------------------------------------------------------------------------
-        // render cubes for cameraPath points
+        // render waypoints
         //for (glm::vec3 pos : cameraPath.Positions)
         std::vector<CameraWaypoint> camPos = cameraPath.Positions();
         for (size_t i = 0; i < camPos.size(); ++i)
         {
-            basicShader.use(); // bind shader
-            glBindVertexArray(VAO);
-
-            // calculate the model matrix for each object and pass it to shader before drawing
-            glm::mat4 model = glm::mat4(1.0f); // make sure to initialize matrix to identity matrix first
-
-            //glm::vec3 pos = cameraFloating.position();
+            model = glm::mat4(1.0f);
             model = glm::translate(model, camPos[i].position);
             model = glm::scale(model, glm::vec3(0.1, 0.1, 0.1));
+            // roate by fixed rad
+            float deg = 2 * PI / CONTROL_POINTS;
+            model = glm::rotate(model, -deg * i, glm::vec3(0.0f, 1.0f, 0.0f));
+            // rotate by quaternion
+            //glm::vec3 euler = glm::eulerAngles(camPos[i].rotation);
+            // TODO: find out if already rad?
+            //model = glm::rotate(model, glm::radians(euler.x), glm::vec3(1.0f, 0.0f, 0.0f));
+            //model = glm::rotate(model, euler.x, glm::vec3(1.0f, 0.0f, 0.0f));
+            //model = glm::rotate(model, euler.y, glm::vec3(0.0f, 1.0f, 0.0f));
+            //model = glm::rotate(model, euler.z, glm::vec3(0.0f, 0.0f, 1.0f));
             basicShader.setMat4("model", model);
 
             // adding additional shader stuff like lighting
@@ -376,17 +457,12 @@ int main(int argc, char** argv)
 
         //--------------------------------------------------------------------------------------------------------
         // render funny world cubes
-        glBindVertexArray(VAO);
         int totalCubes = sizeof(cubePositions) / sizeof(glm::vec3);
         for (unsigned int i = 0; i < totalCubes; i++)
         {
-            basicShader.use(); // bind shader
-
-            // calculate the model matrix for each object and pass it to shader before drawing
-            model = glm::mat4(1.0f); // make sure to initialize matrix to identity matrix first
+            model = glm::mat4(1.0f);
             model = glm::translate(model, cubePositions[i]);
-            float angle = 20.0f * i;
-            model = glm::rotate(model, glm::radians(angle), glm::vec3(1.0f, 0.3f, 0.5f));
+            model = glm::rotate(model, glm::radians(20.0f * i), glm::vec3(1.0f, 0.3f, 0.5f));
             basicShader.setMat4("model", model);
 
             // adding additional shader stuff like lighting
@@ -428,6 +504,7 @@ void processInput(GLFWwindow* window)
 
     if (glfwGetKey(window, GLFW_KEY_SPACE) == GLFW_PRESS)
     {
+        // prevent adding a new point direclty at / near existing point
         bool add = true;
         glm::vec3 camPos = baseCamera.Position;
         //for (CameraWaypoint pt : cameraPath.Positions) { // illegal indirection TODO: wtf?
@@ -446,7 +523,10 @@ void processInput(GLFWwindow* window)
         {
             CameraWaypoint camPt;
             camPt.position = camPos;
-            //std::cout << "Added waypoint #" << cameraPath.Positions().size() << " at " << glm::to_string(camPt.position) << std::endl;
+            camPt.rotation = baseCamera.Rotation;
+            //std::cout << "Added waypoint #" << cameraPath.Positions().size() <<
+            //    " at " << glm::to_string(camPt.position) <<
+            //    " with rotation: " << glm::to_string(camPt.rotation) << std::endl;
             cameraPath.AddPosition(camPt);
         }
     }
