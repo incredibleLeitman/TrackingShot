@@ -54,4 +54,24 @@
       <Filter>Header Files</Filter>
     </ClInclude>
   </ItemGroup>
+  <ItemGroup>
+    <None Include="shaders\basicShader.fs">
+      <Filter>Resource Files</Filter>
+    </None>
+    <None Include="shaders\basicShader.vs">
+      <Filter>Resource Files</Filter>
+    </None>
+    <None Include="shaders\depthShader.fs">
+      <Filter>Resource Files</Filter>
+    </None>
+    <None Include="shaders\depthShader.vs">
+      <Filter>Resource Files</Filter>
+    </None>
+    <None Include="shaders\lightingShader.fs">
+      <Filter>Resource Files</Filter>
+    </None>
+    <None Include="shaders\lightingShader.vs">
+      <Filter>Resource Files</Filter>
+    </None>
+  </ItemGroup>
 </Project>

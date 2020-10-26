@@ -153,6 +153,14 @@
     <ClInclude Include="transform.h" />
     <ClInclude Include="world.h" />
   </ItemGroup>
+  <ItemGroup>
+    <None Include="shaders\basicShader.fs" />
+    <None Include="shaders\basicShader.vs" />
+    <None Include="shaders\depthShader.fs" />
+    <None Include="shaders\depthShader.vs" />
+    <None Include="shaders\lightingShader.fs" />
+    <None Include="shaders\lightingShader.vs" />
+  </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">
   </ImportGroup>
