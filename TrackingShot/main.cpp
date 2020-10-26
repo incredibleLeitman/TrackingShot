@@ -27,23 +27,25 @@
 #include "shader.h"
 #include "light.h"
 #include "spline.h"
-//#include "world.h"
+#include "world.h"
 
 #include "errorHandler.h" // use with GLCALL(glfunction());
 
-void framebuffer_size_callback(GLFWwindow* window, int width, int height);
-void mouse_callback(GLFWwindow* window, double xpos, double ypos);
-void scroll_callback(GLFWwindow* window, double xoffset, double yoffset);
-void processInput(GLFWwindow* window);
+// forward declarations
+void framebuffer_size_callback (GLFWwindow* window, int width, int height);
+void mouse_callback (GLFWwindow* window, double xpos, double ypos);
+void scroll_callback (GLFWwindow* window, double xoffset, double yoffset);
+void processInput (GLFWwindow* window);
+void renderScene (const Shader& shader);
 
 const GLint WIDTH = 800, HEIGHT = 600;
-const int CONTROL_POINTS = 20; // Angabe: mindestens 20 Stützpunkte
+const unsigned int SHADOW_WIDTH = 1024, SHADOW_HEIGHT = 1024;
 
-// TODO: world
+// TODO: move to world
 Camera baseCamera(glm::vec3(0.0f, 20.0f, 0.0f), glm::vec3(0.0f, 1.0f, 0.0f), 0, -90); // camera to overview scene
 Camera camera(glm::vec3(0.0f, 0.0f, 0.0f)); // floating camera
-//CameraFloating cameraFloating; // floating camera
 CameraPath cameraPath; // path for waypoints, including rotations
+const int CONTROL_POINTS = 20; // Angabe: mindestens 20 Stützpunkte
 bool editMode = true; // changes beween base and floating camera
 
 // dynamic camera settings
@@ -56,13 +58,13 @@ float camSpeed = SPEED;
 float deltaTime = 0.0f;	// time between current frame and last frame
 float lastFrame = 0.0f;
 
-int exitWithError(std::string code)
+int exitWithError (std::string code)
 {
     std::cout << "error: " << code << std::endl;
     return EXIT_FAILURE;
 }
 
-int main(int argc, char** argv)
+int main (int argc, char** argv)
 {
     // Initialize the library
     if (!glfwInit())
@@ -103,19 +105,6 @@ int main(int argc, char** argv)
         return exitWithError("Failed to initialize GLEW");
     }
 
-    // Define the viewport dimensions
-    //int screenWidth, screenHeight;
-    //glfwGetFramebufferSize(window, &screenWidth, &screenHeight);
-    //glViewport(0, 0, screenWidth, screenHeight);
-
-    // TODO: define world
-
-    // add camera starting point to waypoints
-    /*CameraWaypoint camPt;
-    camPt.position = camera.Position;
-    camPt.rotation = camera.Rotation;
-    cameraPath.AddPosition(camPt);*/
-
     // add defined amount of waypoints to list
     if (CONTROL_POINTS > 0)
     {
@@ -145,11 +134,12 @@ int main(int argc, char** argv)
     }
 
     // setup global light
-    Light gLight;
-    //gLight.position = camera.position();
-    //gLight.position = glm::vec3(0, 0, 10);
-    gLight.position = glm::vec3(0, 0, 0);
+    gLight.position = glm::vec3(0, 5, 0);
     gLight.intensities = glm::vec3(1, 1, 1); // white
+    lights.push_back(gLight);
+
+    // TODO: add another light -> emiting from camera
+    //gLight.position = camera.position();
     //gLight.intensities = glm::vec3(1, 0, 0); // red
 
 #ifdef MODERN_NO_SHADER
@@ -175,78 +165,37 @@ int main(int argc, char** argv)
     glEnable(GL_DEPTH_TEST);
 
     // build and compile shader programs
-    Shader basicShader("lightingShader.vs", "lightingShader.fs");
-    basicShader.use();
+    Shader shader("shaders/lightingShader.vs", "shaders/lightingShader.fs");
+    Shader depthShader("shaders/depthShader.vs", "shaders/depthShader.fs");
+    //shader.use();
 
-    // set up vertex data (and buffer(s)) and configure vertex attributes
-    GLfloat vertices[] = {
-        //  X     Y     Z       U     V          Normal
-        // bottom
-        -1.0f,-1.0f,-1.0f,   0.0f, 0.0f,   0.0f, -1.0f, 0.0f,
-        1.0f,-1.0f,-1.0f,   1.0f, 0.0f,   0.0f, -1.0f, 0.0f,
-        -1.0f,-1.0f, 1.0f,   0.0f, 1.0f,   0.0f, -1.0f, 0.0f,
-        1.0f,-1.0f,-1.0f,   1.0f, 0.0f,   0.0f, -1.0f, 0.0f,
-        1.0f,-1.0f, 1.0f,   1.0f, 1.0f,   0.0f, -1.0f, 0.0f,
-        -1.0f,-1.0f, 1.0f,   0.0f, 1.0f,   0.0f, -1.0f, 0.0f,
+    // ------------- UE2 shadow mapping -------------------------------------------------------------------------------
+    // used sources:
+    //      https://learnopengl.com/Advanced-Lighting/Shadows/Shadow-Mapping
+    //      http://www.opengl-tutorial.org/intermediate-tutorials/tutorial-16-shadow-mapping/
 
-        // top
-        -1.0f, 1.0f,-1.0f,   0.0f, 0.0f,   0.0f, 1.0f, 0.0f,
-        -1.0f, 1.0f, 1.0f,   0.0f, 1.0f,   0.0f, 1.0f, 0.0f,
-        1.0f, 1.0f,-1.0f,   1.0f, 0.0f,   0.0f, 1.0f, 0.0f,
-        1.0f, 1.0f,-1.0f,   1.0f, 0.0f,   0.0f, 1.0f, 0.0f,
-        -1.0f, 1.0f, 1.0f,   0.0f, 1.0f,   0.0f, 1.0f, 0.0f,
-        1.0f, 1.0f, 1.0f,   1.0f, 1.0f,   0.0f, 1.0f, 0.0f,
+    // framebuffer for rendering depthMap
+    unsigned int depthMapFBO;
+    glGenFramebuffers(1, &depthMapFBO);
 
-        // front
-        -1.0f,-1.0f, 1.0f,   1.0f, 0.0f,   0.0f, 0.0f, 1.0f,
-        1.0f,-1.0f, 1.0f,   0.0f, 0.0f,   0.0f, 0.0f, 1.0f,
-        -1.0f, 1.0f, 1.0f,   1.0f, 1.0f,   0.0f, 0.0f, 1.0f,
-        1.0f,-1.0f, 1.0f,   0.0f, 0.0f,   0.0f, 0.0f, 1.0f,
-        1.0f, 1.0f, 1.0f,   0.0f, 1.0f,   0.0f, 0.0f, 1.0f,
-        -1.0f, 1.0f, 1.0f,   1.0f, 1.0f,   0.0f, 0.0f, 1.0f,
-
-        // back
-       -1.0f,-1.0f,-1.0f,   0.0f, 0.0f,   0.0f, 0.0f, -1.0f,
-       -1.0f, 1.0f,-1.0f,   0.0f, 1.0f,   0.0f, 0.0f, -1.0f,
-        1.0f,-1.0f,-1.0f,   1.0f, 0.0f,   0.0f, 0.0f, -1.0f,
-        1.0f,-1.0f,-1.0f,   1.0f, 0.0f,   0.0f, 0.0f, -1.0f,
-       -1.0f, 1.0f,-1.0f,   0.0f, 1.0f,   0.0f, 0.0f, -1.0f,
-        1.0f, 1.0f,-1.0f,   1.0f, 1.0f,   0.0f, 0.0f, -1.0f,
-
-        // left
-        -1.0f,-1.0f, 1.0f,   0.0f, 1.0f,   -1.0f, 0.0f, 0.0f,
-        -1.0f, 1.0f,-1.0f,   1.0f, 0.0f,   -1.0f, 0.0f, 0.0f,
-        -1.0f,-1.0f,-1.0f,   0.0f, 0.0f,   -1.0f, 0.0f, 0.0f,
-        -1.0f,-1.0f, 1.0f,   0.0f, 1.0f,   -1.0f, 0.0f, 0.0f,
-        -1.0f, 1.0f, 1.0f,   1.0f, 1.0f,   -1.0f, 0.0f, 0.0f,
-        -1.0f, 1.0f,-1.0f,   1.0f, 0.0f,   -1.0f, 0.0f, 0.0f,
-
-        // right
-        1.0f,-1.0f, 1.0f,   1.0f, 1.0f,   1.0f, 0.0f, 0.0f,
-        1.0f,-1.0f,-1.0f,   1.0f, 0.0f,   1.0f, 0.0f, 0.0f,
-        1.0f, 1.0f,-1.0f,   0.0f, 0.0f,   1.0f, 0.0f, 0.0f,
-        1.0f,-1.0f, 1.0f,   1.0f, 1.0f,   1.0f, 0.0f, 0.0f,
-        1.0f, 1.0f,-1.0f,   0.0f, 0.0f,   1.0f, 0.0f, 0.0f,
-        1.0f, 1.0f, 1.0f,   0.0f, 1.0f,   1.0f, 0.0f, 0.0f
-    };
-    // world space positions of our cubes
-    // x: +right, -left
-    // y: +up, -down
-    // z: +near, -far
-    glm::vec3 cubePositions[] = {
-        glm::vec3(0.0f,  0.0f,  0.0f),
-        glm::vec3(2.0f,  5.0f, -15.0f),
-        glm::vec3(-1.5f, -2.2f, -2.5f),
-        glm::vec3(-3.8f, -2.0f, -12.3f),
-        glm::vec3(2.4f, -0.4f, -3.5f),
-        glm::vec3(-1.7f,  3.0f, -7.5f),
-        glm::vec3(1.3f, -5.0f, -2.5f),
-        glm::vec3(5.5f,  2.0f, -2.5f),
-        glm::vec3(1.5f,  0.2f, -8.5f),
-        glm::vec3(-1.3f,  3.0f, -1.5f)
-    };
-    //std::cout << "cubes.length: " << cubePositions->length() << std::endl; // 3 !!!
-    //std::cout << "sizeof(cubes): " << sizeof(cubePositions) / sizeof(glm::vec3) << std::endl; // -> correct!
+    // create depth texture
+    unsigned int depthMap;
+    glGenTextures(1, &depthMap);
+    glBindTexture(GL_TEXTURE_2D, depthMap);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_DEPTH_COMPONENT, SHADOW_WIDTH, SHADOW_HEIGHT, 0, GL_DEPTH_COMPONENT, GL_FLOAT, NULL);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_BORDER);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_BORDER);
+    float borderColor[] = { 1.0, 1.0, 1.0, 1.0 };
+    glTexParameterfv(GL_TEXTURE_2D, GL_TEXTURE_BORDER_COLOR, borderColor);
+    // attach depth texture as FBO's depth buffer
+    glBindFramebuffer(GL_FRAMEBUFFER, depthMapFBO);
+    glFramebufferTexture2D(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_TEXTURE_2D, depthMap, 0);
+    glDrawBuffer(GL_NONE);
+    glReadBuffer(GL_NONE);
+    glBindFramebuffer(GL_FRAMEBUFFER, 0);
+    // ------------- UE2 shadow mapping -------------------------------------------------------------------------------
 
     unsigned int VBO, VAO;
     glGenVertexArrays(1, &VAO);
@@ -270,10 +219,7 @@ int main(int argc, char** argv)
     size_t curWayPt = 0; // index of current waypoint to drive to
     float t = 0; // t für spline interpolations
     float s = 1; // distance between points
-    CameraWaypoint pt0;
-    CameraWaypoint pt1;
-    CameraWaypoint pt2;
-    CameraWaypoint pt3;
+    CameraWaypoint pt0, pt1, pt2, pt3;
     if (cameraPath.PositionsSize() > 0)
     {
         size_t size = cameraPath.PositionsSize();
@@ -300,6 +246,32 @@ int main(int argc, char** argv)
         glClearColor(0.2f, 0.3f, 0.3f, 1.0f);
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
+        // ------------- UE2 shadow mapping -------------------------------------------------------------------------------
+        // 1. render depth of scene to texture (from light's perspective)
+        // --------------------------------------------------------------
+        glm::mat4 lightProjection, lightView, lightSpace;
+        float near_plane = 1.0f, far_plane = 7.5f;
+        //lightProjection = glm::perspective(glm::radians(45.0f), (GLfloat)SHADOW_WIDTH / (GLfloat)SHADOW_HEIGHT, near_plane, far_plane); // note that if you use a perspective projection matrix you'll have to change the light position as the current light position isn't enough to reflect the whole scene
+        lightProjection = glm::ortho(-10.0f, 10.0f, -10.0f, 10.0f, near_plane, far_plane);
+        lightView = glm::lookAt(gLight.position, glm::vec3(0.0f), glm::vec3(0.0, 1.0, 0.0));
+        lightSpace = lightProjection * lightView;
+        // render scene from light's point of view
+        depthShader.use();
+        depthShader.setMat4("lightSpace", lightSpace);
+
+        glViewport(0, 0, SHADOW_WIDTH, SHADOW_HEIGHT);
+        glBindFramebuffer(GL_FRAMEBUFFER, depthMapFBO);
+        glClear(GL_DEPTH_BUFFER_BIT);
+        glActiveTexture(GL_TEXTURE0);
+        //glBindTexture(GL_TEXTURE_2D, woodTexture);
+        renderScene(depthShader);
+        glBindFramebuffer(GL_FRAMEBUFFER, 0);
+
+        // reset viewport
+        //glViewport(0, 0, WIDTH, HEIGHT);
+        //glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+        // ------------- UE2 shadow mapping -------------------------------------------------------------------------------
+
 #ifdef CLASSIC_OGL
         // draw old gl triangle
         glBegin(GL_TRIANGLES);
@@ -312,12 +284,8 @@ int main(int argc, char** argv)
         glDrawArrays(GL_TRIANGLES, 0, 3);
 #endif
 
-        // activate shader
-        basicShader.use();
-
         float dist = glm::distance(camera.Position, cameraPath.Positions()[(curWayPt + 1) % cameraPath.PositionsSize()].position);
-        //std::cout << " dist: " << dist << std::endl;
-        if (/*dist < .1f ||*/ t >= 1)
+        if (t >= 1)
         {
             size_t size = cameraPath.PositionsSize();
             curWayPt = (curWayPt + 1) % size;
@@ -328,10 +296,10 @@ int main(int argc, char** argv)
             pt0 = cameraPath.Positions()[(curWayPt > 0) ? curWayPt - 1 : size - 1];
             s = glm::distance(camera.Position, pt2.position); // total distance between current position end next waypoint
 
-            std::cout << " moving to point #" << curWayPt <<
+            /*std::cout << " moving to point #" << curWayPt <<
                 " with position: " << glm::to_string(pt2.position) <<
                 " and rotation" << glm::to_string(pt2.rotation) <<
-                " for t: " << t << std::endl;
+                " for t: " << t << std::endl;*/
             t -= (int)t;
         }
 
@@ -345,141 +313,36 @@ int main(int argc, char** argv)
             glm::intermediate(pt0.rotation, pt1.rotation, pt2.rotation),
             glm::intermediate(pt1.rotation, pt2.rotation, pt3.rotation), t));
 
-        //--------------------------------------------------------------------------------------------------------
+        // render complete world
+        //renderScene(shader);
+
+        // ------------- UE2 shadow mapping -------------------------------------------------------------------------------
+        // 2. render scene as normal using the generated depth/shadow map  
+        // --------------------------------------------------------------
+        glViewport(0, 0, WIDTH, HEIGHT);
+        glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+        shader.use();
+
         // change camera mode (controlled by mouse or auto run)
         Camera cam = (editMode) ? baseCamera : camera;
         // pass projection matrix to shader (in this case it could change every frame)
         glm::mat4 projection = glm::perspective(glm::radians(cam.Zoom), (float)WIDTH / (float)HEIGHT, 0.1f, 100.0f);
-        basicShader.setMat4("projection", projection);
+        shader.setMat4("projection", projection);
 
         // camera/view transformation
         glm::mat4 view = cam.GetViewMatrix();
-        basicShader.setMat4("view", view);
-        //basicShader.setMat4("view", glm::inverse(view));
+        shader.setMat4("view", view);
 
-        /* https://www.tomdalling.com/blog/modern-opengl/04-cameras-vectors-and-input/
-        glm::vec3 curPos = cameraFloating.position();
-        float dist = glm::distance(curPos, newPos);
-        std::cout << "remaining dist from " << glm::to_string(curPos) << " to trackPt " << glm::to_string(newPos) << ": " << dist << std::endl; // wtf? 1.85978e+08
-
-        cameraFloating.lookAt(glm::vec3(0, 0, 0));
-        //cameraFloating.lookAt(newPos);
-        cameraFloating.offsetPosition(deltaTime * 2 * cameraFloating.forward());
-        //cameraFloating.offsetPosition(deltaTime * 2 * cameraFloating.forward());
-
-        //glm::mat4 view = cameraFloating.matrix();
-        glm::mat4 view = cameraFloating.view();
-        basicShader.setMat4("view", view);*/
-
-        // calculate the model matrix for each object and pass it to shader before drawing
-        glm::mat4 model = glm::mat4(1.0f); // make sure to initialize matrix to identity matrix first
-        //---------------------------------------------------------------------------------------------------------
-        // render a cube for floating camera
-        if (editMode)
-        {
-            //glm::vec3 pos = cameraFloating.position();
-            model = glm::translate(model, camera.Position);
-            model = glm::scale(model, glm::vec3(0.5, 0.5, 0.5));
-
-            // rotate by quaternion
-            /*glm::vec3 euler = glm::eulerAngles(camera.Rotation);
-            // no visible rotation?
-            //model = glm::rotate(model, glm::radians(euler.x), glm::vec3(1.0f, 0.0f, 0.0f));
-            //model = glm::rotate(model, glm::radians(euler.y), glm::vec3(0.0f, 1.0f, 0.0f));
-            //model = glm::rotate(model, glm::radians(euler.z), glm::vec3(0.0f, 0.0f, 1.0f));
-            // little rotation but wrong
-            model = glm::rotate(model, euler.x, glm::vec3(0.0f, 1.0f, 0.0f));
-            model = glm::rotate(model, euler.y, glm::vec3(0.0f, 1.0f, 0.0f));
-            model = glm::rotate(model, euler.z, glm::vec3(0.0f, 0.0f, 1.0f));*/
-
-            glm::mat4 rotMat = glm::toMat4(camera.Rotation);
-            model *= rotMat;
-
-            basicShader.setMat4("model", model);
-
-            // adding additional shader stuff like lighting
-            basicShader.setMat4("transform", model);
-            basicShader.setVec4("color", glm::vec4(1, 0, 1, 1));
-            // setting light params
-            basicShader.setVec3("light.position", gLight.position);
-            basicShader.setVec3("light.intensities", gLight.intensities);
-
-            glDrawArrays(GL_TRIANGLES, 0, 36);
-        }
-
-        //---------------------------------------------------------------------------------------------------------
-        // render the sun \ [T] /
-        model = glm::mat4(1.0f);
-        model = glm::translate(model, gLight.position);
-        model = glm::scale(model, glm::vec3(0.2, 0.2, 0.2));
-        basicShader.setMat4("model", model);
-
-        // adding additional shader stuff like lighting
-        basicShader.setMat4("transform", model);
-        basicShader.setVec4("color", glm::vec4(1, 1, 0, 1));
-
-        // setting light params
-        basicShader.setVec3("light.position", gLight.position);
-        basicShader.setVec3("light.intensities", gLight.intensities);
-
-        glDrawArrays(GL_TRIANGLES, 0, 36);
-
-        //--------------------------------------------------------------------------------------------------------
-        // render waypoints
-        //for (glm::vec3 pos : cameraPath.Positions)
-        std::vector<CameraWaypoint> camPos = cameraPath.Positions();
-        for (size_t i = 0; i < camPos.size(); ++i)
-        {
-            model = glm::mat4(1.0f);
-            model = glm::translate(model, camPos[i].position);
-            model = glm::scale(model, glm::vec3(0.1, 0.1, 0.1));
-            // roate by fixed rad
-            float deg = 2 * PI / CONTROL_POINTS;
-            model = glm::rotate(model, -deg * i, glm::vec3(0.0f, 1.0f, 0.0f));
-            // rotate by quaternion
-            //glm::vec3 euler = glm::eulerAngles(camPos[i].rotation);
-            // TODO: find out if already rad?
-            //model = glm::rotate(model, glm::radians(euler.x), glm::vec3(1.0f, 0.0f, 0.0f));
-            //model = glm::rotate(model, euler.x, glm::vec3(1.0f, 0.0f, 0.0f));
-            //model = glm::rotate(model, euler.y, glm::vec3(0.0f, 1.0f, 0.0f));
-            //model = glm::rotate(model, euler.z, glm::vec3(0.0f, 0.0f, 1.0f));
-            basicShader.setMat4("model", model);
-
-            // adding additional shader stuff like lighting
-            basicShader.setMat4("transform", model);
-            basicShader.setVec4("color", glm::vec4(1, 0, 0, 1));
-            // setting light params
-            basicShader.setVec3("light.position", gLight.position);
-            basicShader.setVec3("light.intensities", gLight.intensities);
-
-            glDrawArrays(GL_TRIANGLES, 0, 36);
-        }
-
-        //--------------------------------------------------------------------------------------------------------
-        // render funny world cubes
-        int totalCubes = sizeof(cubePositions) / sizeof(glm::vec3);
-        for (unsigned int i = 0; i < totalCubes; i++)
-        {
-            model = glm::mat4(1.0f);
-            model = glm::translate(model, cubePositions[i]);
-            model = glm::rotate(model, glm::radians(20.0f * i), glm::vec3(1.0f, 0.3f, 0.5f));
-            basicShader.setMat4("model", model);
-
-            // adding additional shader stuff like lighting
-            basicShader.setMat4("transform", model);
-            basicShader.setVec4("color", glm::vec4(0, 0, 1, 1));
-            // setting light params
-            basicShader.setVec3("light.position", gLight.position);
-            basicShader.setVec3("light.intensities", gLight.intensities);
-
-            glDrawArrays(GL_TRIANGLES, 0, 36);
-
-            // TODO: unbind shader?
-            //glUseProgram(0);
-        }
-        //--------------------------------------------------------------------------------------------------------
-
-        // TODO: world->render()
+        // set light uniforms
+        shader.setVec3("viewPos", camera.Position);
+        shader.setVec3("lightPos", gLight.position);
+        shader.setMat4("lightSpace", lightSpace);
+        //glActiveTexture(GL_TEXTURE0);
+        //glBindTexture(GL_TEXTURE_2D, woodTexture);
+        //glActiveTexture(GL_TEXTURE1);
+        glBindTexture(GL_TEXTURE_2D, depthMap);
+        renderScene(shader);
+        // ------------- UE2 shadow mapping -------------------------------------------------------------------------------
 
         // Swap front and back buffers
         glfwSwapBuffers(window);
@@ -490,6 +353,112 @@ int main(int argc, char** argv)
 
     glfwTerminate();
     return EXIT_SUCCESS;
+}
+
+// renders all scene models with the given shader
+void renderScene (const Shader &shader)
+{
+    // calculate the model matrix for each object and pass it to shader before drawing
+    glm::mat4 model = glm::mat4(1.0f); // make sure to initialize matrix to identity matrix first
+    //---------------------------------------------------------------------------------------------------------
+    // render a cube for floating camera
+    if (editMode)
+    {
+        model = glm::translate(model, camera.Position);
+        model = glm::scale(model, glm::vec3(0.5, 0.5, 0.5));
+        model *= glm::toMat4(camera.Rotation); // rotate by quaternion
+
+        shader.setMat4("model", model);
+
+        // adding additional shader stuff like lighting
+        shader.setMat4("transform", model);
+        shader.setVec4("color", glm::vec4(1, 0, 1, 1));
+        // setting light params
+        shader.setVec3("light.position", gLight.position);
+        shader.setVec3("light.intensities", gLight.intensities);
+
+        glDrawArrays(GL_TRIANGLES, 0, 36);
+    }
+
+    //---------------------------------------------------------------------------------------------------------
+    // render plane
+    model = glm::mat4(1.0f);
+    model = glm::translate(model, glm::vec3(0, -2, 0));
+    model = glm::scale(model, glm::vec3(20, 0.1, 20));
+    shader.setMat4("model", model);
+
+    // adding additional shader stuff like lighting
+    shader.setMat4("transform", model);
+    shader.setVec4("color", glm::vec4(0, 1, 0, 1));
+
+    // setting light params
+    shader.setVec3("light.position", gLight.position);
+    shader.setVec3("light.intensities", gLight.intensities);
+
+    glDrawArrays(GL_TRIANGLES, 0, 36);
+
+    //---------------------------------------------------------------------------------------------------------
+    // render the sun \ [T] /
+    for (auto light : lights)
+    {
+        model = glm::mat4(1.0f);
+        model = glm::translate(model, light.position);
+        model = glm::scale(model, glm::vec3(0.2, 0.2, 0.2));
+        shader.setMat4("model", model);
+
+        // adding additional shader stuff like lighting
+        shader.setMat4("transform", model);
+        shader.setVec4("color", glm::vec4(1, 1, 1, 1));
+
+        // setting light params
+        shader.setVec3("light.position", light.position);
+        shader.setVec3("light.intensities", light.intensities);
+
+        glDrawArrays(GL_TRIANGLES, 0, 36);
+    }
+
+    //--------------------------------------------------------------------------------------------------------
+    // render waypoints
+    std::vector<CameraWaypoint> camPos = cameraPath.Positions();
+    for (size_t i = 0; i < camPos.size(); ++i)
+    {
+        model = glm::mat4(1.0f);
+        model = glm::translate(model, camPos[i].position);
+        model = glm::scale(model, glm::vec3(0.1, 0.1, 0.1));
+        // rotate by fixed rad
+        float deg = 2 * PI / CONTROL_POINTS;
+        model = glm::rotate(model, -deg * i, glm::vec3(0.0f, 1.0f, 0.0f));
+        shader.setMat4("model", model);
+
+        // adding additional shader stuff like lighting
+        shader.setMat4("transform", model);
+        shader.setVec4("color", glm::vec4(1, 0, 0, 1));
+        // setting light params
+        shader.setVec3("light.position", gLight.position);
+        shader.setVec3("light.intensities", gLight.intensities);
+
+        glDrawArrays(GL_TRIANGLES, 0, 36);
+    }
+
+    //--------------------------------------------------------------------------------------------------------
+    // render funny world cubes
+    int totalCubes = sizeof(cubePositions) / sizeof(glm::vec3);
+    for (unsigned int i = 0; i < totalCubes; i++)
+    {
+        model = glm::mat4(1.0f);
+        model = glm::translate(model, cubePositions[i]);
+        model = glm::rotate(model, glm::radians(20.0f * i), glm::vec3(1.0f, 0.3f, 0.5f));
+        shader.setMat4("model", model);
+
+        // adding additional shader stuff like lighting
+        shader.setMat4("transform", model);
+        shader.setVec4("color", glm::vec4(0, 0, 1, 1));
+        // setting light params
+        shader.setVec3("light.position", gLight.position);
+        shader.setVec3("light.intensities", gLight.intensities);
+
+        glDrawArrays(GL_TRIANGLES, 0, 36);
+    }
 }
 
 // process all input: query GLFW whether relevant keys are pressed/released this frame and react accordingly
