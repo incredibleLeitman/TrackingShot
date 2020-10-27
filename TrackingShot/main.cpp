@@ -1,9 +1,10 @@
+#define USE_THIS
+#ifdef USE_THIS
 //------------------------------------------------------------------------------------------
 // Camera Tracking Shot Project for EZG Master Game Engineering FH Technikum Wien
 //------------------------------------------------------------------------------------------
 //
 // General TODOs:
-// - combine cameras, only use resulting projection and view matrices
 // - structure stuff into classes
 // - integrate textures, plains, skybox...
 //------------------------------------------------------------------------------------------
@@ -22,8 +23,7 @@
 #include <GLFW/glfw3.h>
 
 #include "camera.h"
-#include "camera_floating.h"
-#include "camera_path.h"
+#include "cameraPath.h"
 #include "shader.h"
 #include "light.h"
 #include "spline.h"
@@ -40,12 +40,14 @@ void renderScene (const Shader& shader);
 
 const GLint WIDTH = 800, HEIGHT = 600;
 const unsigned int SHADOW_WIDTH = 1024, SHADOW_HEIGHT = 1024;
+const float NEAR = 0.1f;
+const float FAR = 30.0f;
 
 // TODO: move to world
 Camera baseCamera(glm::vec3(0.0f, 20.0f, 0.0f), glm::vec3(0.0f, 1.0f, 0.0f), 0, -90); // camera to overview scene
 Camera camera(glm::vec3(0.0f, 0.0f, 0.0f)); // floating camera
 CameraPath cameraPath; // path for waypoints, including rotations
-const int CONTROL_POINTS = 20; // Angabe: mindestens 20 Stützpunkte
+const int CONTROL_POINTS = 20; // Angabe UE1: mindestens 20 Stützpunkte
 bool editMode = true; // changes beween base and floating camera
 
 // dynamic camera settings
@@ -134,11 +136,11 @@ int main (int argc, char** argv)
     }
 
     // setup global light
-    gLight.position = glm::vec3(0, 5, 0);
+    gLight.position = glm::vec3(0, 10, 0);
     gLight.intensities = glm::vec3(1, 1, 1); // white
-    lights.push_back(gLight);
+    lights.push_back(&gLight);
 
-    // TODO: add another light -> emiting from camera
+    // TODO: add another light -> emitting from camera
     //gLight.position = camera.position();
     //gLight.intensities = glm::vec3(1, 0, 0); // red
 
@@ -165,9 +167,8 @@ int main (int argc, char** argv)
     glEnable(GL_DEPTH_TEST);
 
     // build and compile shader programs
-    Shader shader("shaders/lightingShader.vs", "shaders/lightingShader.fs");
-    Shader depthShader("shaders/depthShader.vs", "shaders/depthShader.fs");
-    //shader.use();
+    Shader shader("shaders/lightingShader.vs", "shaders/lightingShader.fs"); // actual shader for world objects
+    Shader depthShader("shaders/depthShader.vs", "shaders/depthShader.fs"); // depth shader to shadow map
 
     // ------------- UE2 shadow mapping -------------------------------------------------------------------------------
     // used sources:
@@ -203,23 +204,25 @@ int main (int argc, char** argv)
 
     glGenBuffers(1, &VBO);
     glBindBuffer(GL_ARRAY_BUFFER, VBO);
+    // fill buffer
     glBufferData(GL_ARRAY_BUFFER, sizeof(vertices), vertices, GL_STATIC_DRAW);
 
+    // link vertex attributes
     // position attribute
-    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 8 * sizeof(float), (void*)0);
     glEnableVertexAttribArray(0);
+    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 8 * sizeof(float), (void*)0);
     // texture coord attribute
-    glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, 8 * sizeof(float), (void*)(3 * sizeof(float)));
     glEnableVertexAttribArray(1);
+    glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, 8 * sizeof(float), (void*)(3 * sizeof(float)));
     // normal attribute
-    glVertexAttribPointer(2, 3, GL_FLOAT, GL_TRUE, 8 * sizeof(float), (void*)(5 * sizeof(float)));
     glEnableVertexAttribArray(2);
+    glVertexAttribPointer(2, 3, GL_FLOAT, GL_TRUE, 8 * sizeof(float), (void*)(5 * sizeof(float)));
 
     // spline interpolation for position and rotation
     size_t curWayPt = 0; // index of current waypoint to drive to
     float t = 0; // t für spline interpolations
     float s = 1; // distance between points
-    CameraWaypoint pt0, pt1, pt2, pt3;
+    CameraWaypoint pt0{}, pt1{}, pt2{}, pt3{};
     if (cameraPath.PositionsSize() > 0)
     {
         size_t size = cameraPath.PositionsSize();
@@ -241,48 +244,6 @@ int main (int argc, char** argv)
 
         // input
         processInput(window);
-
-        // Render here
-        glClearColor(0.2f, 0.3f, 0.3f, 1.0f);
-        glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
-
-        // ------------- UE2 shadow mapping -------------------------------------------------------------------------------
-        // 1. render depth of scene to texture (from light's perspective)
-        // --------------------------------------------------------------
-        glm::mat4 lightProjection, lightView, lightSpace;
-        float near_plane = 1.0f, far_plane = 7.5f;
-        //lightProjection = glm::perspective(glm::radians(45.0f), (GLfloat)SHADOW_WIDTH / (GLfloat)SHADOW_HEIGHT, near_plane, far_plane); // note that if you use a perspective projection matrix you'll have to change the light position as the current light position isn't enough to reflect the whole scene
-        lightProjection = glm::ortho(-10.0f, 10.0f, -10.0f, 10.0f, near_plane, far_plane);
-        lightView = glm::lookAt(gLight.position, glm::vec3(0.0f), glm::vec3(0.0, 1.0, 0.0));
-        lightSpace = lightProjection * lightView;
-        // render scene from light's point of view
-        depthShader.use();
-        depthShader.setMat4("lightSpace", lightSpace);
-
-        glViewport(0, 0, SHADOW_WIDTH, SHADOW_HEIGHT);
-        glBindFramebuffer(GL_FRAMEBUFFER, depthMapFBO);
-        glClear(GL_DEPTH_BUFFER_BIT);
-        glActiveTexture(GL_TEXTURE0);
-        //glBindTexture(GL_TEXTURE_2D, woodTexture);
-        renderScene(depthShader);
-        glBindFramebuffer(GL_FRAMEBUFFER, 0);
-
-        // reset viewport
-        //glViewport(0, 0, WIDTH, HEIGHT);
-        //glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
-        // ------------- UE2 shadow mapping -------------------------------------------------------------------------------
-
-#ifdef CLASSIC_OGL
-        // draw old gl triangle
-        glBegin(GL_TRIANGLES);
-        glVertex2f(-.5, -.5);
-        glVertex2f(0, .5);
-        glVertex2f(.5, -.5);
-        glEnd();
-#elif MODERN_NO_SHADER
-        // draw modern gl vertex buffer
-        glDrawArrays(GL_TRIANGLES, 0, 3);
-#endif
 
         float dist = glm::distance(camera.Position, cameraPath.Positions()[(curWayPt + 1) % cameraPath.PositionsSize()].position);
         if (t >= 1)
@@ -313,11 +274,57 @@ int main (int argc, char** argv)
             glm::intermediate(pt0.rotation, pt1.rotation, pt2.rotation),
             glm::intermediate(pt1.rotation, pt2.rotation, pt3.rotation), t));
 
+        // TODO make toggle for dynamic light position change
+        gLight.position.x = sin(currentFrame * camSpeed * 0.1) * 10.0f;
+        gLight.position.z = cos(currentFrame * camSpeed * 0.1) * 10.0f; // rotate around y
+        //gLight.position.y = 10.0 + cos(currentFrame * camSpeed * 0.1) * 10.0f; // rotate around z
+
+        // able to inc- / decrease radius
+        //gLight.position.x = sin(currentFrame) * 3.0f * camSpeed;
+        //gLight.position.z = cos(currentFrame) * 3.0f * camSpeed;
+        //gLight.position.y = 5.0 + cos(currentFrame) * 1.0f;
+        //std::cout << "gLight.position: " << glm::to_string(gLight.position) << std::endl;
+
+        // Render here
+        glClearColor(0.2f, 0.3f, 0.3f, 1.0f);
+        glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+
+#ifdef CLASSIC_OGL
+        // draw old gl triangle
+        glBegin(GL_TRIANGLES);
+        glVertex2f(-.5, -.5);
+        glVertex2f(0, .5);
+        glVertex2f(.5, -.5);
+        glEnd();
+#elif MODERN_NO_SHADER
+        // draw modern gl vertex buffer
+        glDrawArrays(GL_TRIANGLES, 0, 3);
+#endif
+
+        // ------------- UE2 shadow mapping -------------------------------------------------------------------------------
+        // 1. render depth of scene to texture (from light's perspective)
+        // --------------------------------------------------------------
+        glm::mat4 lightProjection, lightView, lightSpace;
+        //lightProjection = glm::perspective(glm::radians(45.0f), (GLfloat)SHADOW_WIDTH / (GLfloat)SHADOW_HEIGHT, NEAR, FAR); // note that if you use a perspective projection matrix you'll have to change the light position as the current light position isn't enough to reflect the whole scene
+        lightProjection = glm::ortho(-10.0f, 10.0f, -10.0f, 10.0f, NEAR, FAR);
+        lightView = glm::lookAt(gLight.position, glm::vec3(0.0f), glm::vec3(0.0, 1.0, 0.0));
+        lightSpace = lightProjection * lightView;
+        // render scene from light's point of view
+        depthShader.use();
+        depthShader.setMat4("lightSpace", lightSpace);
+
+        glViewport(0, 0, SHADOW_WIDTH, SHADOW_HEIGHT);
+        glBindFramebuffer(GL_FRAMEBUFFER, depthMapFBO);
+        glClear(GL_DEPTH_BUFFER_BIT);
+        renderScene(depthShader);
+        glBindFramebuffer(GL_FRAMEBUFFER, 0);
+        // ------------- UE2 shadow mapping -------------------------------------------------------------------------------
+
         // render complete world
         //renderScene(shader);
 
         // ------------- UE2 shadow mapping -------------------------------------------------------------------------------
-        // 2. render scene as normal using the generated depth/shadow map  
+        // 2. render scene as normal using the generated depth/shadow map
         // --------------------------------------------------------------
         glViewport(0, 0, WIDTH, HEIGHT);
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
@@ -334,12 +341,10 @@ int main (int argc, char** argv)
         shader.setMat4("view", view);
 
         // set light uniforms
-        shader.setVec3("viewPos", camera.Position);
-        shader.setVec3("lightPos", gLight.position);
+        shader.setVec3("viewPos", cam.Position);
         shader.setMat4("lightSpace", lightSpace);
-        //glActiveTexture(GL_TEXTURE0);
-        //glBindTexture(GL_TEXTURE_2D, woodTexture);
-        //glActiveTexture(GL_TEXTURE1);
+        shader.setVec3("light.position", gLight.position);
+        shader.setVec3("light.intensities", gLight.intensities);
         glBindTexture(GL_TEXTURE_2D, depthMap);
         renderScene(shader);
         // ------------- UE2 shadow mapping -------------------------------------------------------------------------------
@@ -350,6 +355,9 @@ int main (int argc, char** argv)
         // Poll for and process events
         glfwPollEvents();
     }
+
+    glDeleteVertexArrays(1, &VAO);
+    glDeleteBuffers(1, &VBO);
 
     glfwTerminate();
     return EXIT_SUCCESS;
@@ -365,17 +373,11 @@ void renderScene (const Shader &shader)
     if (editMode)
     {
         model = glm::translate(model, camera.Position);
-        model = glm::scale(model, glm::vec3(0.5, 0.5, 0.5));
+        model = glm::scale(model, glm::vec3(0.5f));
         model *= glm::toMat4(camera.Rotation); // rotate by quaternion
 
         shader.setMat4("model", model);
-
-        // adding additional shader stuff like lighting
-        shader.setMat4("transform", model);
         shader.setVec4("color", glm::vec4(1, 0, 1, 1));
-        // setting light params
-        shader.setVec3("light.position", gLight.position);
-        shader.setVec3("light.intensities", gLight.intensities);
 
         glDrawArrays(GL_TRIANGLES, 0, 36);
     }
@@ -386,35 +388,25 @@ void renderScene (const Shader &shader)
     model = glm::translate(model, glm::vec3(0, -2, 0));
     model = glm::scale(model, glm::vec3(20, 0.1, 20));
     shader.setMat4("model", model);
-
-    // adding additional shader stuff like lighting
-    shader.setMat4("transform", model);
     shader.setVec4("color", glm::vec4(0, 1, 0, 1));
-
-    // setting light params
-    shader.setVec3("light.position", gLight.position);
-    shader.setVec3("light.intensities", gLight.intensities);
 
     glDrawArrays(GL_TRIANGLES, 0, 36);
 
     //---------------------------------------------------------------------------------------------------------
     // render the sun \ [T] /
-    for (auto light : lights)
+    //std::cout << "shader ID: " << shader.ID << std::endl;
+    if (shader.ID != 6) // no depth map for light sources
     {
-        model = glm::mat4(1.0f);
-        model = glm::translate(model, light.position);
-        model = glm::scale(model, glm::vec3(0.2, 0.2, 0.2));
-        shader.setMat4("model", model);
+        for (auto light : lights)
+        {
+            model = glm::mat4(1.0f);
+            model = glm::translate(model, light->position);
+            model = glm::scale(model, glm::vec3(0.2f));
+            shader.setMat4("model", model);
+            shader.setVec4("color", glm::vec4(1, 1, 1, 1));
 
-        // adding additional shader stuff like lighting
-        shader.setMat4("transform", model);
-        shader.setVec4("color", glm::vec4(1, 1, 1, 1));
-
-        // setting light params
-        shader.setVec3("light.position", light.position);
-        shader.setVec3("light.intensities", light.intensities);
-
-        glDrawArrays(GL_TRIANGLES, 0, 36);
+            glDrawArrays(GL_TRIANGLES, 0, 36);
+        }
     }
 
     //--------------------------------------------------------------------------------------------------------
@@ -424,38 +416,26 @@ void renderScene (const Shader &shader)
     {
         model = glm::mat4(1.0f);
         model = glm::translate(model, camPos[i].position);
-        model = glm::scale(model, glm::vec3(0.1, 0.1, 0.1));
+        model = glm::scale(model, glm::vec3(0.1f));
         // rotate by fixed rad
         float deg = 2 * PI / CONTROL_POINTS;
         model = glm::rotate(model, -deg * i, glm::vec3(0.0f, 1.0f, 0.0f));
         shader.setMat4("model", model);
-
-        // adding additional shader stuff like lighting
-        shader.setMat4("transform", model);
         shader.setVec4("color", glm::vec4(1, 0, 0, 1));
-        // setting light params
-        shader.setVec3("light.position", gLight.position);
-        shader.setVec3("light.intensities", gLight.intensities);
 
         glDrawArrays(GL_TRIANGLES, 0, 36);
     }
 
     //--------------------------------------------------------------------------------------------------------
     // render funny world cubes
-    int totalCubes = sizeof(cubePositions) / sizeof(glm::vec3);
+    int totalCubes = 5; //sizeof(cubePositions) / sizeof(glm::vec3);
     for (unsigned int i = 0; i < totalCubes; i++)
     {
         model = glm::mat4(1.0f);
         model = glm::translate(model, cubePositions[i]);
         model = glm::rotate(model, glm::radians(20.0f * i), glm::vec3(1.0f, 0.3f, 0.5f));
         shader.setMat4("model", model);
-
-        // adding additional shader stuff like lighting
-        shader.setMat4("transform", model);
         shader.setVec4("color", glm::vec4(0, 0, 1, 1));
-        // setting light params
-        shader.setVec3("light.position", gLight.position);
-        shader.setVec3("light.intensities", gLight.intensities);
 
         glDrawArrays(GL_TRIANGLES, 0, 36);
     }
@@ -561,3 +541,4 @@ void scroll_callback(GLFWwindow* window, double xoffset, double yoffset)
     //std::cout << "scroll callback for " << yoffset << std::endl;
     baseCamera.ProcessMouseScroll(yoffset);
 }
+#endif
