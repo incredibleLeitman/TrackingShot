@@ -1,13 +1,10 @@
 #version 330 core
 
-in vec2 TexCoord;
+in vec2 texCoord;
 in vec3 fragNormal;
 in vec3 fragVert;
 in vec4 fragPosLightSpace;
 in vec4 baseColor;
-
-// transform
-uniform mat4 transform;
 
 // texture samplers
 uniform sampler2D texture1;
@@ -23,7 +20,7 @@ uniform struct Light {
 
 out vec4 FragColor;
 
-float ShadowCalculation (vec4 fragPosLightSpace)
+float calcShadows (vec4 fragPosLightSpace)
 {
     // perform perspective divide
     vec3 projCoords = fragPosLightSpace.xyz / fragPosLightSpace.w;
@@ -38,10 +35,11 @@ float ShadowCalculation (vec4 fragPosLightSpace)
     vec3 lightDir = normalize(light.position - fragVert);
     float bias = max(0.05 * (1.0 - dot(normal, lightDir)), 0.005);
     // check whether current frag pos is in shadow
-    // float shadow = currentDepth - bias > closestDepth  ? 1.0 : 0.0;
+    float shadow = currentDepth - bias > closestDepth  ? 1.0 : 0.0;
     // PCF
-    float shadow = 0.0;
-    vec2 texelSize = 1.0 / textureSize(shadowMap, 0);
+    //float shadow = 0.0;
+
+    vec2 texelSize = 1.0/textureSize(shadowMap, 0);
     for(int x = -1; x <= 1; ++x)
     {
         for(int y = -1; y <= 1; ++y)
@@ -61,11 +59,14 @@ float ShadowCalculation (vec4 fragPosLightSpace)
 void main ()
 {
     //calculate normal in world coordinates
-    mat3 normalMatrix = transpose(inverse(mat3(transform)));
-    vec3 normal = normalize(normalMatrix * fragNormal);
+    //mat3 normalMatrix = transpose(inverse(mat3(model)));
+    //vec3 normal = normalize(normalMatrix * fragNormal);
+    vec3 normal = normalize(fragNormal);
+    //vec3 normal = fragNormal;
 
     //calculate the location of this fragment (pixel) in world coordinates
-    vec3 fragPosition = vec3(transform * vec4(fragVert, 1));
+    //vec3 fragPosition = vec3(model * vec4(fragVert, 1));
+    vec3 fragPosition = fragVert;
 
     //calculate the vector from this pixels surface to the light source
     vec3 surfaceToLight = light.position - fragPosition;
@@ -86,8 +87,9 @@ void main ()
     // EDIT: add shadow
     //FragColor = vec4(brightness * light.intensities * texColor.rgb, texColor.a);
 
-    // calculate shadow
-    float shadow = ShadowCalculation(fragPosLightSpace);
+    // calculate shadows
+    float shadow = calcShadows(fragPosLightSpace);
     //vec3 lighting = (ambient + (1.0 - shadow) * (diffuse + specular)) * color;
     FragColor = vec4(brightness * (1.0 - shadow) * light.intensities * texColor.rgb, texColor.a);
+    //FragColor = vec4(brightness + (1.0 - shadow) * light.intensities * texColor.rgb, texColor.a);
 }
