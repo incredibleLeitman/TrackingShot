@@ -140,16 +140,17 @@
   <ItemGroup>
     <ClCompile Include="errorHandler.cpp" />
     <ClCompile Include="main.cpp" />
+    <ClCompile Include="textureHandler.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="camera.h" />
-    <ClInclude Include="camera_floating.h" />
+    <ClInclude Include="cameraPath.h" />
     <ClInclude Include="errorHandler.h" />
     <ClInclude Include="light.h" />
-    <ClInclude Include="camera_path.h" />
     <ClInclude Include="shader.h" />
     <ClInclude Include="spline.h" />
     <ClInclude Include="stb_image.h" />
+    <ClInclude Include="textureHandler.h" />
     <ClInclude Include="transform.h" />
     <ClInclude Include="world.h" />
   </ItemGroup>

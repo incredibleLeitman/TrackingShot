@@ -28,6 +28,7 @@
 #include "light.h"
 #include "spline.h"
 #include "world.h"
+#include "textureHandler.h"
 
 #include "errorHandler.h" // use with GLCALL(glfunction());
 
@@ -53,7 +54,6 @@ bool editMode = true; // changes beween base and floating camera
 // dynamic camera settings
 float lastX = WIDTH / 2.0f;
 float lastY = HEIGHT / 2.0f;
-bool firstMouse = true;
 float camSpeed = SPEED;
 
 // timing
@@ -111,7 +111,7 @@ int main (int argc, char** argv)
     if (CONTROL_POINTS > 0)
     {
         float rad = 8.0f;
-        float deg = 2 * PI / CONTROL_POINTS;
+        float deg = (float)(2 * PI / CONTROL_POINTS);
         for (int i = 0; i < CONTROL_POINTS; ++i)
         {
             CameraWaypoint camPt;
@@ -170,6 +170,26 @@ int main (int argc, char** argv)
     Shader shader("shaders/lightingShader.vs", "shaders/lightingShader.fs"); // actual shader for world objects
     Shader depthShader("shaders/depthShader.vs", "shaders/depthShader.fs"); // depth shader to shadow map
 
+    // ------------- UE3 normal mapping -------------------------------------------------------------------------------
+    // used sources:
+    //      https://learnopengl.com/Advanced-Lighting/Normal-Mapping
+    //      http://www.opengl-tutorial.org/intermediate-tutorials/tutorial-13-normal-mapping/
+    //      http://ogldev.atspace.co.uk/www/tutorial26/tutorial26.html
+
+    // init textures
+    unsigned int diffuseMap = loadTexture("textures/brickwall.jpg");
+    unsigned int normalMap = loadTexture("textures/brickwall_normal.jpg");
+    glActiveTexture(GL_TEXTURE1);
+    glBindTexture(GL_TEXTURE_2D, diffuseMap);
+    glActiveTexture(GL_TEXTURE2);
+    glBindTexture(GL_TEXTURE_2D, normalMap);
+
+    shader.use();
+    shader.setInt("shadowMap", 0);
+    shader.setInt("diffuseMap", 1);
+    shader.setInt("normalMap", 2);
+    // ------------- UE3 normal mapping -------------------------------------------------------------------------------
+
     // ------------- UE2 shadow mapping -------------------------------------------------------------------------------
     // used sources:
     //      https://learnopengl.com/Advanced-Lighting/Shadows/Shadow-Mapping
@@ -182,6 +202,7 @@ int main (int argc, char** argv)
     // create depth texture
     unsigned int depthMap;
     glGenTextures(1, &depthMap);
+    glActiveTexture(GL_TEXTURE0);
     glBindTexture(GL_TEXTURE_2D, depthMap);
     glTexImage2D(GL_TEXTURE_2D, 0, GL_DEPTH_COMPONENT, SHADOW_WIDTH, SHADOW_HEIGHT, 0, GL_DEPTH_COMPONENT, GL_FLOAT, NULL);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
@@ -217,6 +238,14 @@ int main (int argc, char** argv)
     // normal attribute
     glEnableVertexAttribArray(2);
     glVertexAttribPointer(2, 3, GL_FLOAT, GL_TRUE, 8 * sizeof(float), (void*)(5 * sizeof(float)));
+    /*
+    // tangent
+    glEnableVertexAttribArray(3);
+    glVertexAttribPointer(3, 3, GL_FLOAT, GL_FALSE, 14 * sizeof(float), (void*)(8 * sizeof(float)));
+    // bitangent
+    glEnableVertexAttribArray(4);
+    glVertexAttribPointer(4, 3, GL_FLOAT, GL_FALSE, 14 * sizeof(float), (void*)(11 * sizeof(float)));
+    */
 
     // spline interpolation for position and rotation
     size_t curWayPt = 0; // index of current waypoint to drive to
@@ -237,12 +266,11 @@ int main (int argc, char** argv)
     while (!glfwWindowShouldClose(window))
     {
         // per-frame time logic
-        float currentFrame = glfwGetTime();
+        float currentFrame = (float)glfwGetTime();
         deltaTime = currentFrame - lastFrame;
         lastFrame = currentFrame;
         //std::cout << "delta time: " << deltaTime << std::endl;
 
-        // input
         processInput(window);
 
         float dist = glm::distance(camera.Position, cameraPath.Positions()[(curWayPt + 1) % cameraPath.PositionsSize()].position);
@@ -275,8 +303,8 @@ int main (int argc, char** argv)
             glm::intermediate(pt1.rotation, pt2.rotation, pt3.rotation), t));
 
         // TODO make toggle for dynamic light position change
-        gLight.position.x = sin(currentFrame * camSpeed * 0.1) * 10.0f;
-        gLight.position.z = cos(currentFrame * camSpeed * 0.1) * 10.0f; // rotate around y
+        gLight.position.x = (float)sin(currentFrame * camSpeed * 0.1) * 10.0f;
+        gLight.position.z = (float)cos(currentFrame * camSpeed * 0.1) * 10.0f; // rotate around y
         //gLight.position.y = 10.0 + cos(currentFrame * camSpeed * 0.1) * 10.0f; // rotate around z
 
         // able to inc- / decrease radius
@@ -320,9 +348,6 @@ int main (int argc, char** argv)
         glBindFramebuffer(GL_FRAMEBUFFER, 0);
         // ------------- UE2 shadow mapping -------------------------------------------------------------------------------
 
-        // render complete world
-        //renderScene(shader);
-
         // ------------- UE2 shadow mapping -------------------------------------------------------------------------------
         // 2. render scene as normal using the generated depth/shadow map
         // --------------------------------------------------------------
@@ -337,15 +362,16 @@ int main (int argc, char** argv)
         shader.setMat4("projection", projection);
 
         // camera/view transformation
-        glm::mat4 view = cam.GetViewMatrix();
-        shader.setMat4("view", view);
+        shader.setMat4("view", cam.GetViewMatrix());
 
         // set light uniforms
         shader.setVec3("viewPos", cam.Position);
         shader.setMat4("lightSpace", lightSpace);
         shader.setVec3("light.position", gLight.position);
         shader.setVec3("light.intensities", gLight.intensities);
-        glBindTexture(GL_TEXTURE_2D, depthMap);
+        //glBindTexture(GL_TEXTURE_2D, diffuseMap);
+        //glBindTexture(GL_TEXTURE_2D, normalMap);
+        //glBindTexture(GL_TEXTURE_2D, depthMap);
         renderScene(shader);
         // ------------- UE2 shadow mapping -------------------------------------------------------------------------------
 
@@ -418,7 +444,7 @@ void renderScene (const Shader &shader)
         model = glm::translate(model, camPos[i].position);
         model = glm::scale(model, glm::vec3(0.1f));
         // rotate by fixed rad
-        float deg = 2 * PI / CONTROL_POINTS;
+        float deg = (float)(2 * PI / CONTROL_POINTS);
         model = glm::rotate(model, -deg * i, glm::vec3(0.0f, 1.0f, 0.0f));
         shader.setMat4("model", model);
         shader.setVec4("color", glm::vec4(1, 0, 0, 1));
@@ -428,7 +454,7 @@ void renderScene (const Shader &shader)
 
     //--------------------------------------------------------------------------------------------------------
     // render funny world cubes
-    int totalCubes = 5; //sizeof(cubePositions) / sizeof(glm::vec3);
+    unsigned int totalCubes = 5; //sizeof(cubePositions) / sizeof(glm::vec3);
     for (unsigned int i = 0; i < totalCubes; i++)
     {
         model = glm::mat4(1.0f);
@@ -459,7 +485,7 @@ void processInput(GLFWwindow* window)
         //for (CameraWaypoint pt : cameraPath.Positions) { // illegal indirection TODO: wtf?
         //for (int i = 0; i < cameraPath.Positions.size(); ++i)
         std::vector<CameraWaypoint> wayPos = cameraPath.Positions();
-        for (int i = 0; i < wayPos.size(); ++i)
+        for (unsigned int i = 0; i < wayPos.size(); ++i)
         {
             if (glm::distance(cameraPath.Positions()[i].position, camPos) < 1)
             {
@@ -518,18 +544,19 @@ void framebuffer_size_callback(GLFWwindow* window, int width, int height)
 void mouse_callback(GLFWwindow* window, double xpos, double ypos)
 {
     //std::cout << "mouse callback on " << xpos << ", " << ypos << std::endl;
+    static bool firstMouse = true;
     if (firstMouse)
     {
-        lastX = xpos;
-        lastY = ypos;
+        lastX = (float)xpos;
+        lastY = (float)ypos;
         firstMouse = false;
     }
 
-    float xoffset = xpos - lastX;
-    float yoffset = lastY - ypos; // reversed since y-coordinates go from bottom to top
+    float xoffset = (float)(xpos - lastX);
+    float yoffset = (float)(lastY - ypos); // reversed since y-coordinates go from bottom to top
 
-    lastX = xpos;
-    lastY = ypos;
+    lastX = (float)xpos;
+    lastY = (float)ypos;
 
     baseCamera.ProcessMouseMovement(xoffset, yoffset);
 }
@@ -539,6 +566,6 @@ void mouse_callback(GLFWwindow* window, double xpos, double ypos)
 void scroll_callback(GLFWwindow* window, double xoffset, double yoffset)
 {
     //std::cout << "scroll callback for " << yoffset << std::endl;
-    baseCamera.ProcessMouseScroll(yoffset);
+    baseCamera.ProcessMouseScroll((float)yoffset);
 }
 #endif

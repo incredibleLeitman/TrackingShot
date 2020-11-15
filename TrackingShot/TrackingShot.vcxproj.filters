@@ -15,10 +15,13 @@
     </Filter>
   </ItemGroup>
   <ItemGroup>
+    <ClCompile Include="errorHandler.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
     <ClCompile Include="main.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="errorHandler.cpp">
+    <ClCompile Include="textureHandler.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
   </ItemGroup>
@@ -41,16 +44,16 @@
     <ClInclude Include="transform.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="camera_path.h">
-      <Filter>Header Files</Filter>
-    </ClInclude>
-    <ClInclude Include="camera_floating.h">
-      <Filter>Header Files</Filter>
-    </ClInclude>
     <ClInclude Include="spline.h">
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="errorHandler.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="cameraPath.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="textureHandler.h">
       <Filter>Header Files</Filter>
     </ClInclude>
   </ItemGroup>

@@ -1,16 +1,23 @@
 #version 330 core
 
-in vec2 texCoord;
-in vec3 fragNormal;
-in vec3 fragVert;
-in vec4 fragPosLightSpace;
-in vec4 baseColor;
+// arguments from vertex shader
+in VS_OUT {
+    vec3 fragVert;
+    vec3 fragNormal;
+    vec2 texCoord;
+
+    vec4 fragPosLightSpace;
+    vec4 baseColor;
+
+    vec3 TangentLightPos;
+    vec3 TangentViewPos;
+    vec3 TangentFragPos;
+} fs_in;
 
 // texture samplers
-uniform sampler2D texture1;
-uniform sampler2D texture2;
-//uniform sampler2D diffuseTexture;
 uniform sampler2D shadowMap;
+uniform sampler2D diffuseMap;
+uniform sampler2D normalMap;
 
 // light
 uniform struct Light {
@@ -31,9 +38,10 @@ float calcShadows (vec4 fragPosLightSpace)
     // get depth of current fragment from light's perspective
     float currentDepth = projCoords.z;
     // calculate bias (based on depth map resolution and slope)
-    vec3 normal = normalize(fragNormal);
-    vec3 lightDir = normalize(light.position - fragVert);
-    float bias = max(0.05 * (1.0 - dot(normal, lightDir)), 0.005);
+    // to reduce shadow acne (ugly Moiré-like pattern)
+    vec3 normal = normalize(fs_in.fragNormal);
+    vec3 lightDir = normalize(light.position - fs_in.fragVert);
+    float bias = max(0.05 * (1.0 - dot(normal, lightDir)), 0.005); // because bias is dependent on angle between light and surface
     // check whether current frag pos is in shadow
     float shadow = currentDepth - bias > closestDepth  ? 1.0 : 0.0;
     // PCF
@@ -59,37 +67,26 @@ float calcShadows (vec4 fragPosLightSpace)
 void main ()
 {
     //calculate normal in world coordinates
-    //mat3 normalMatrix = transpose(inverse(mat3(model)));
-    //vec3 normal = normalize(normalMatrix * fragNormal);
-    vec3 normal = normalize(fragNormal);
     //vec3 normal = fragNormal;
+    vec3 normal = normalize(fs_in.fragNormal);
+    // obtain normal from normal map in range [0,1] and transform normal vector to range [-1,1]
+    //vec3 normal = normalize(texture(normalMap, fs_in.texCoord).rgb * 2.0 - 1.0);
 
     //calculate the location of this fragment (pixel) in world coordinates
     //vec3 fragPosition = vec3(model * vec4(fragVert, 1));
-    vec3 fragPosition = fragVert;
+    vec3 fragPosition = fs_in.fragVert;
 
     //calculate the vector from this pixels surface to the light source
     vec3 surfaceToLight = light.position - fragPosition;
 
     //calculate the cosine of the angle of incidence
-    float brightness = dot(normal, surfaceToLight) / (length(surfaceToLight) * length(normal));
-    brightness = clamp(brightness, 0, 1);
+    float brightness = clamp(dot(normal, surfaceToLight) / (length(surfaceToLight) * length(normal)), 0, 1);
 
-    //calculate final color of the pixel, based on:
-    // 1. The angle of incidence: brightness
-    // 2. The color/intensities of the light: light.intensities
-    // 3. The texture and texture coord: texture(tex, fragTexCoord)
-    //      linearly interpolate between both textures (80% container, 20% awesomeface)
-    //vec4 texColor = texture(tex, fragTexCoord);
-    //vec4 texColor = mix(texture(texture1, TexCoord), texture(texture2, TexCoord), 0.2);
-    //vec4 texColor = vec4(.5, .5, .5, .5);
-    vec4 texColor = baseColor;
-    // EDIT: add shadow
-    //FragColor = vec4(brightness * light.intensities * texColor.rgb, texColor.a);
+    //calculate final color of the pixel, based on baseColor mixed with texture
+    vec4 texColor = mix(texture(diffuseMap, fs_in.texCoord), fs_in.baseColor, 0.5);
 
     // calculate shadows
-    float shadow = calcShadows(fragPosLightSpace);
+    float shadow = calcShadows(fs_in.fragPosLightSpace);
     //vec3 lighting = (ambient + (1.0 - shadow) * (diffuse + specular)) * color;
     FragColor = vec4(brightness * (1.0 - shadow) * light.intensities * texColor.rgb, texColor.a);
-    //FragColor = vec4(brightness + (1.0 - shadow) * light.intensities * texColor.rgb, texColor.a);
 }
