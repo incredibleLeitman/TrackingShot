@@ -4,5 +4,5 @@
 
 struct Light {
     glm::vec3 position;
-    glm::vec3 intensities; //a.k.a. the color of the light
+    glm::vec3 color;
 };

@@ -56,6 +56,8 @@ float lastX = WIDTH / 2.0f;
 float lastY = HEIGHT / 2.0f;
 float camSpeed = SPEED;
 
+float bumpiness = 0.5f; // Bonus UE3: dynamic setting of bumpiness
+
 // timing
 float deltaTime = 0.0f;	// time between current frame and last frame
 float lastFrame = 0.0f;
@@ -137,12 +139,12 @@ int main (int argc, char** argv)
 
     // setup global light
     gLight.position = glm::vec3(0, 10, 0);
-    gLight.intensities = glm::vec3(1, 1, 1); // white
+    gLight.color = glm::vec3(1, 1, 1); // white
     lights.push_back(&gLight);
 
     // TODO: add another light -> emitting from camera
     //gLight.position = camera.position();
-    //gLight.intensities = glm::vec3(1, 0, 0); // red
+    //gLight.color = glm::vec3(1, 0, 0); // red
 
 #ifdef MODERN_NO_SHADER
     // vertex data for modern open gl triangle
@@ -354,6 +356,8 @@ int main (int argc, char** argv)
         glViewport(0, 0, WIDTH, HEIGHT);
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
         shader.use();
+        // dynamically allow to set bumpiness
+        shader.setFloat("bumpiness", bumpiness);
 
         // change camera mode (controlled by mouse or auto run)
         Camera cam = (editMode) ? baseCamera : camera;
@@ -368,7 +372,7 @@ int main (int argc, char** argv)
         shader.setVec3("viewPos", cam.Position);
         shader.setMat4("lightSpace", lightSpace);
         shader.setVec3("light.position", gLight.position);
-        shader.setVec3("light.intensities", gLight.intensities);
+        shader.setVec3("light.color", gLight.color);
         //glBindTexture(GL_TEXTURE_2D, diffuseMap);
         //glBindTexture(GL_TEXTURE_2D, normalMap);
         //glBindTexture(GL_TEXTURE_2D, depthMap);
@@ -432,6 +436,7 @@ void renderScene (const Shader &shader)
             shader.setVec4("color", glm::vec4(1, 1, 1, 1));
 
             glDrawArrays(GL_TRIANGLES, 0, 36);
+            // TODO: would be nice to drawSphere(model);
         }
     }
 
@@ -511,6 +516,14 @@ void processInput(GLFWwindow* window)
         editMode = true;
     else if (glfwGetKey(window, GLFW_KEY_2) == GLFW_PRESS)
         editMode = false;
+
+    // change bumpiness of normal maps
+    if (glfwGetKey(window, GLFW_KEY_PAGE_UP))
+        //bumpiness += 0.1f;
+        bumpiness = glm::min(1.0f, bumpiness + 0.01f);
+    else if (glfwGetKey(window, GLFW_KEY_PAGE_DOWN))
+        //bumpiness -= 0.1f;
+        bumpiness = glm::max(0.0f, bumpiness - 0.01f);
 
     // speed up / slow down
     if (glfwGetKey(window, GLFW_KEY_KP_ADD))
