@@ -6,7 +6,7 @@
 //
 // General TODOs:
 // - structure stuff into classes
-// - integrate textures, plains, skybox...
+// - integrate plains, skybox...
 //------------------------------------------------------------------------------------------
 
 // define drawing mode for openGL variant:
@@ -36,10 +36,13 @@
 void framebuffer_size_callback (GLFWwindow* window, int width, int height);
 void mouse_callback (GLFWwindow* window, double xpos, double ypos);
 void scroll_callback (GLFWwindow* window, double xoffset, double yoffset);
+void key_callback(GLFWwindow* window, int key, int scancode, int action, int mods);
 void processInput (GLFWwindow* window);
 void renderScene (const Shader& shader);
 
+GLFWwindow* window = nullptr;
 const GLint WIDTH = 800, HEIGHT = 600;
+int SAMPLES = 8;
 const unsigned int SHADOW_WIDTH = 1024, SHADOW_HEIGHT = 1024;
 const float NEAR = 0.1f;
 const float FAR = 30.0f;
@@ -68,14 +71,9 @@ int exitWithError (std::string code)
     return EXIT_FAILURE;
 }
 
-int main (int argc, char** argv)
+int createWindow ()
 {
-    // Initialize the library
-    if (!glfwInit())
-        return exitWithError("could not initialize glfw");
-
-    // Create a windowed mode window and its OpenGL context
-    GLFWwindow* window = glfwCreateWindow(WIDTH, HEIGHT, "TrackingShot", nullptr, nullptr);
+    window = glfwCreateWindow(WIDTH, HEIGHT, "TrackingShot", nullptr, nullptr);
     if (!window)
     {
         glfwTerminate();
@@ -87,9 +85,17 @@ int main (int argc, char** argv)
     glfwSetFramebufferSizeCallback(window, framebuffer_size_callback);
     glfwSetCursorPosCallback(window, mouse_callback);
     glfwSetScrollCallback(window, scroll_callback);
+    glfwSetKeyCallback(window, key_callback);
 
     // tell GLFW to capture our mouse
     glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
+}
+
+int main (int argc, char** argv)
+{
+    // Initialize glfw library
+    if (!glfwInit())
+        return exitWithError("could not initialize glfw");
 
     // Set all the required options for GLFW
     glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 3);
@@ -97,6 +103,13 @@ int main (int argc, char** argv)
     glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
     glfwWindowHint(GLFW_OPENGL_FORWARD_COMPAT, GL_TRUE);
     glfwWindowHint(GLFW_RESIZABLE, GL_FALSE);
+    glfwWindowHint(GLFW_SAMPLES, SAMPLES); // defined samples for  GLFW Window: Zero disables multisampling, a value of GLFW_DONT_CARE means the application has no preference
+    //glfwOpenWindowHint(GLFW_FSAA_SAMPLES, 4); // used for OpenGL version 2
+    // could also use a custom Anti-Aliasing algorithm in the shader, multisampled texture attachments
+    //      https://learnopengl.com/Advanced-OpenGL/Anti-Aliasing
+
+    // Create a windowed mode window and its OpenGL context
+    createWindow();
 
     // Set this to true so GLEW knows to use a modern approach to retrieving function pointers and extensions
     glewExperimental = GL_TRUE;
@@ -168,6 +181,9 @@ int main (int argc, char** argv)
     // configure global opengl state
     glEnable(GL_DEPTH_TEST);
 
+    // UE4: enable multisampling
+    glEnable(GL_MULTISAMPLE);
+
     // build and compile shader programs
     Shader shader("shaders/lightingShader.vs", "shaders/lightingShader.fs"); // actual shader for world objects
     Shader depthShader("shaders/depthShader.vs", "shaders/depthShader.fs"); // depth shader to shadow map
@@ -181,8 +197,13 @@ int main (int argc, char** argv)
     // init textures
     unsigned int diffuseMap = loadTexture("textures/brickwall.jpg");
     unsigned int normalMap = loadTexture("textures/brickwall_normal.jpg");
+    std::cout << "diffuseMap: " << diffuseMap << ", normalMap: " << normalMap << std::endl;
     glActiveTexture(GL_TEXTURE1);
     glBindTexture(GL_TEXTURE_2D, diffuseMap);
+    // UE4: may also use multisample textures
+    //glBindTexture(GL_TEXTURE_2D_MULTISAMPLE, diffuseMap);
+    //glTexImage2DMultisample(GL_TEXTURE_2D_MULTISAMPLE, 16, GL_RGB, WIDTH, HEIGHT, GL_TRUE);
+
     glActiveTexture(GL_TEXTURE2);
     glBindTexture(GL_TEXTURE_2D, normalMap);
 
@@ -373,9 +394,6 @@ int main (int argc, char** argv)
         shader.setMat4("lightSpace", lightSpace);
         shader.setVec3("light.position", gLight.position);
         shader.setVec3("light.color", gLight.color);
-        //glBindTexture(GL_TEXTURE_2D, diffuseMap);
-        //glBindTexture(GL_TEXTURE_2D, normalMap);
-        //glBindTexture(GL_TEXTURE_2D, depthMap);
         renderScene(shader);
         // ------------- UE2 shadow mapping -------------------------------------------------------------------------------
 
@@ -476,6 +494,7 @@ void renderScene (const Shader &shader)
 // ---------------------------------------------------------------------------------------------------------
 void processInput(GLFWwindow* window)
 {
+    // TODO: better move to key events
     //std::cout << "processing input... " << std::endl;
 
     // add camera waypoint
@@ -580,5 +599,43 @@ void scroll_callback(GLFWwindow* window, double xoffset, double yoffset)
 {
     //std::cout << "scroll callback for " << yoffset << std::endl;
     baseCamera.ProcessMouseScroll((float)yoffset);
+}
+
+// The callback function receives the keyboard key, platform-specific scancode, key action and modifier bits.
+// ----------------------------------------------------------------------
+void key_callback(GLFWwindow* window, int key, int scancode, int action, int mods)
+{
+    if (action == GLFW_PRESS)
+    {
+        //if (glfwGetKey(window, GLFW_KEY_KP_0) == GLFW_PRESS)
+        std::cout << "key press callback for " << key << std::endl;
+        if (key == GLFW_KEY_F1)
+        {
+            std::cout << "disabling multisample" << std::endl;
+            glDisable(GL_MULTISAMPLE);
+            glfwWindowHint(GLFW_SAMPLES, 0);
+        }
+        else if (key == GLFW_KEY_F2)
+        {
+            std::cout << "ensabling multisample GLFW_DONT_CARE" << std::endl;
+            glEnable(GL_MULTISAMPLE);
+            glfwWindowHint(GLFW_SAMPLES, GLFW_DONT_CARE);
+        }
+        else if (key >= GLFW_KEY_F3 && key <= GLFW_KEY_F12)
+        {
+            SAMPLES = (int)std::pow(2, key - GLFW_KEY_F1);
+            std::cout << "ensabling multisample x" << SAMPLES << std::endl;
+            glEnable(GL_MULTISAMPLE);
+            glfwWindowHint(GLFW_SAMPLES, SAMPLES);
+
+            glfwSetWindowShouldClose(window, true);
+            glfwTerminate();
+
+            // lul, just reinit window? -> even better, whole application! xD
+            //GLFWwindow* window = glfwCreateWindow(WIDTH, HEIGHT, "TrackingShot", nullptr, nullptr);
+            //createWindow();
+            main(0, nullptr);
+        }
+    }
 }
 #endif
