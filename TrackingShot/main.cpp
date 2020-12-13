@@ -80,6 +80,8 @@ int createWindow ()
         return exitWithError("could not initialize glfw window");
     }
 
+    glfwSetWindowPos(window, 250, 250);
+
     // Make the window's context current
     glfwMakeContextCurrent(window);
     glfwSetFramebufferSizeCallback(window, framebuffer_size_callback);
@@ -607,8 +609,7 @@ void key_callback(GLFWwindow* window, int key, int scancode, int action, int mod
 {
     if (action == GLFW_PRESS)
     {
-        //if (glfwGetKey(window, GLFW_KEY_KP_0) == GLFW_PRESS)
-        std::cout << "key press callback for " << key << std::endl;
+        //std::cout << "key press callback for " << key << std::endl;
         if (key == GLFW_KEY_F1)
         {
             std::cout << "disabling multisample" << std::endl;
@@ -645,8 +646,7 @@ void key_callback(GLFWwindow* window, int key, int scancode, int action, int mod
             glfwTerminate();
 
             // lul, just reinit window? -> even better, whole application! xD
-            //GLFWwindow* window = glfwCreateWindow(WIDTH, HEIGHT, "TrackingShot", nullptr, nullptr);
-            //createWindow();
+            //createWindow(); --> TODO: handle windows dependent functions
             main(0, nullptr);
         }
     }
