@@ -25,3 +25,23 @@ With space a new waypoint with the current position and rotation is appended to 
 ### page up, page down 
 
 increase / decrease bumpiness factor
+
+## Anti Aliasing
+
+### F1 - F12
+
+Interactively set the mode for anti-aliasing
+```
+F1 - Off
+F2 - GLFW_DONT_CARE
+F3 - 2x(2xMS)
+F4 - 2x Quincunx Multisampling
+F5 - FSAA disabled
+F6 - 4x Bilinear Multisampling
+F7 - 4x(4xMS)
+F8 - 8x(4xMS, 4xCS)
+F9 - 16x(4xMS, 12xCS)
+F10 - 8x(4xSS, 2xMS)
+F11 - 8x(8xMS)
+F12 - 16x(8xMS, 8xCS)
+```
