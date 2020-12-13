@@ -197,7 +197,7 @@ int main (int argc, char** argv)
     // init textures
     unsigned int diffuseMap = loadTexture("textures/brickwall.jpg");
     unsigned int normalMap = loadTexture("textures/brickwall_normal.jpg");
-    std::cout << "diffuseMap: " << diffuseMap << ", normalMap: " << normalMap << std::endl;
+    //std::cout << "diffuseMap: " << diffuseMap << ", normalMap: " << normalMap << std::endl; // 1, 2
     glActiveTexture(GL_TEXTURE1);
     glBindTexture(GL_TEXTURE_2D, diffuseMap);
     // UE4: may also use multisample textures
@@ -623,8 +623,21 @@ void key_callback(GLFWwindow* window, int key, int scancode, int action, int mod
         }
         else if (key >= GLFW_KEY_F3 && key <= GLFW_KEY_F12)
         {
-            SAMPLES = (int)std::pow(2, key - GLFW_KEY_F1);
-            std::cout << "ensabling multisample x" << SAMPLES << std::endl;
+            // setting AA Mode
+            // 0 - Off
+            // 1 - 2x(2xMS)
+            // 2 - 2x Quincunx Multisampling
+            // 3 - FSAA disabled
+            // 4 - 4x Bilinear Multisampling
+            // 5 - 4x(4xMS)
+            // 7 - 8x(4xMS, 4xCS)
+            // 8 - 16x(4xMS, 12xCS)
+            // 9 - 8x(4xSS, 2xMS)
+            // 10 - 8x(8xMS)
+            // 12 - 16x(8xMS, 8xCS)
+            //SAMPLES = (int)std::pow(2, key - GLFW_KEY_F1); // EDIT: not samples count but mode!
+            SAMPLES = key - GLFW_KEY_F1 + 1;
+            std::cout << "ensabling multisample mode " << SAMPLES << std::endl;
             glEnable(GL_MULTISAMPLE);
             glfwWindowHint(GLFW_SAMPLES, SAMPLES);
 
