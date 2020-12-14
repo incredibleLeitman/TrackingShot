@@ -42,7 +42,8 @@ void renderScene (const Shader& shader);
 
 GLFWwindow* window = nullptr;
 const GLint WIDTH = 800, HEIGHT = 600;
-int SAMPLES = 8;
+bool multisampleEnabled = false;
+int SAMPLES = GLFW_DONT_CARE; // specifies GLFW_SAMPLES mode for GLFWwindow
 const unsigned int SHADOW_WIDTH = 1024, SHADOW_HEIGHT = 1024;
 const float NEAR = 0.1f;
 const float FAR = 30.0f;
@@ -612,34 +613,48 @@ void key_callback(GLFWwindow* window, int key, int scancode, int action, int mod
         //std::cout << "key press callback for " << key << std::endl;
         if (key == GLFW_KEY_F1)
         {
-            std::cout << "disabling multisample" << std::endl;
-            glDisable(GL_MULTISAMPLE);
-            glfwWindowHint(GLFW_SAMPLES, 0);
+            if (multisampleEnabled)
+            {
+                std::cout << "disabling multisample" << std::endl;
+                glDisable(GL_MULTISAMPLE);
+                multisampleEnabled = false;
+            }
+            else
+            {
+                std::cout << "enabling multisample" << std::endl;
+                glEnable(GL_MULTISAMPLE);
+                multisampleEnabled = true;
+            }
+            //glfwWindowHint(GLFW_SAMPLES, 0);
         }
         else if (key == GLFW_KEY_F2)
         {
-            std::cout << "ensabling multisample GLFW_DONT_CARE" << std::endl;
+            std::cout << "enabling multisample mode GLFW_DONT_CARE" << std::endl;
             glEnable(GL_MULTISAMPLE);
+            multisampleEnabled = true;
             glfwWindowHint(GLFW_SAMPLES, GLFW_DONT_CARE);
         }
         else if (key >= GLFW_KEY_F3 && key <= GLFW_KEY_F12)
         {
             // setting AA Mode
-            // 0 - Off
-            // 1 - 2x(2xMS)
-            // 2 - 2x Quincunx Multisampling
-            // 3 - FSAA disabled
-            // 4 - 4x Bilinear Multisampling
-            // 5 - 4x(4xMS)
-            // 7 - 8x(4xMS, 4xCS)
-            // 8 - 16x(4xMS, 12xCS)
-            // 9 - 8x(4xSS, 2xMS)
-            // 10 - 8x(8xMS)
-            // 12 - 16x(8xMS, 8xCS)
+            // adapted from https://stackoverflow.com/questions/6129797/how-to-get-gpu-multisampling-modes-descriptions
+            // F1 - toggle multisampling On / Off
+            // F2 - GLFW_DONT_CARE
+            // F3 - 2x(2xMS)
+            // F4 - 2x Quincunx Multisampling
+            // F5 - FSAA disabled
+            // F6 - 4x Bilinear Multisampling
+            // F7 - 4x(4xMS)
+            // F8 - 8x(4xMS, 4xCS)
+            // F9 - 16x(4xMS, 12xCS)
+            // F10 - 8x(4xSS, 2xMS)
+            // F11 - 8x(8xMS)
+            // F12 - 16x(8xMS, 8xCS)
             //SAMPLES = (int)std::pow(2, key - GLFW_KEY_F1); // EDIT: not samples count but mode!
             SAMPLES = key - GLFW_KEY_F1 + 1;
-            std::cout << "ensabling multisample mode " << SAMPLES << std::endl;
+            std::cout << "enabling multisample mode " << SAMPLES << std::endl;
             glEnable(GL_MULTISAMPLE);
+            multisampleEnabled = true;
             glfwWindowHint(GLFW_SAMPLES, SAMPLES);
 
             glfwSetWindowShouldClose(window, true);

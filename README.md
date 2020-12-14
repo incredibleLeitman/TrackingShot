@@ -32,7 +32,7 @@ increase / decrease bumpiness factor
 
 Interactively set the mode for anti-aliasing
 ```
-F1 - Off
+F1 - toggle multisampling On / Off
 F2 - GLFW_DONT_CARE
 F3 - 2x(2xMS)
 F4 - 2x Quincunx Multisampling
