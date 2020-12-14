@@ -625,7 +625,6 @@ void key_callback(GLFWwindow* window, int key, int scancode, int action, int mod
                 glEnable(GL_MULTISAMPLE);
                 multisampleEnabled = true;
             }
-            //glfwWindowHint(GLFW_SAMPLES, 0);
         }
         else if (key == GLFW_KEY_F2)
         {
